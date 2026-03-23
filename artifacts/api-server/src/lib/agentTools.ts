@@ -1,7 +1,7 @@
 import path from "path";
 import os from "os";
 import { db } from "@workspace/db";
-import { activityLogTable, agentsTable, appSettingsTable } from "@workspace/db";
+import { activityLogTable, agentsTable, agentMessagesTable, appSettingsTable } from "@workspace/db";
 import { eq } from "drizzle-orm";
 import { execWithCreds } from "./sshManager";
 import { emitActivity } from "./activityEmitter";
@@ -245,29 +245,73 @@ export async function codeExecTool(
   const { spawn } = await import("child_process");
 
   const ext = language === "python" ? ".py" : ".mjs";
-  const tmpFile = path.join(os.tmpdir(), `agent-${agentId}-${Date.now()}${ext}`);
+  const sandboxDir = path.join(os.tmpdir(), `agent-sandbox-${agentId}`);
+  const tmpFile = path.join(sandboxDir, `run-${Date.now()}${ext}`);
 
   try {
+    await fs.mkdir(sandboxDir, { recursive: true });
     await fs.writeFile(tmpFile, code);
 
-    const cmd = language === "python" ? "python3" : "node";
-    
-    return new Promise((resolve) => {
+    const TIMEOUT_MS = 8000;
+
+    let cmd: string;
+    let cmdArgs: string[];
+
+    if (language === "python") {
+      cmd = "python3";
+      cmdArgs = ["-I", "-S", tmpFile];
+    } else {
+      cmd = "node";
+      cmdArgs = ["--no-experimental-fetch", "--disallow-code-generation-from-strings", tmpFile];
+    }
+
+    return await new Promise<ToolResult>((resolve) => {
       let stdout = "";
       let stderr = "";
-      const proc = spawn(cmd, [tmpFile], { timeout: 10000 });
+      let resolved = false;
 
-      proc.stdout.on("data", (d: Buffer) => { stdout += d.toString(); });
+      const proc = spawn(cmd, cmdArgs, {
+        timeout: TIMEOUT_MS,
+        env: {
+          PATH: process.env.PATH,
+          HOME: sandboxDir,
+          TMPDIR: sandboxDir,
+        },
+        uid: process.getuid?.(),
+        cwd: sandboxDir,
+      });
+
+      const timer = setTimeout(() => {
+        if (!resolved) {
+          resolved = true;
+          proc.kill("SIGKILL");
+          resolve({ success: false, output: stdout, error: "Execution timed out after 8 seconds" });
+        }
+      }, TIMEOUT_MS + 500);
+
+      proc.stdout.on("data", (d: Buffer) => {
+        stdout += d.toString();
+        if (stdout.length > 32768) { proc.kill("SIGKILL"); }
+      });
       proc.stderr.on("data", (d: Buffer) => { stderr += d.toString(); });
-      proc.on("close", (code) => {
+      proc.on("close", (exitCode) => {
+        clearTimeout(timer);
         fs.unlink(tmpFile).catch(() => {});
-        resolve({
-          success: code === 0,
-          output: stdout + (stderr ? `\nSTDERR:\n${stderr}` : ""),
-        });
+        if (!resolved) {
+          resolved = true;
+          const truncated = stdout.length > 16384 ? stdout.slice(0, 16384) + "\n[output truncated]" : stdout;
+          resolve({
+            success: exitCode === 0,
+            output: truncated + (stderr ? `\nSTDERR:\n${stderr.slice(0, 2048)}` : ""),
+          });
+        }
       });
       proc.on("error", (err) => {
-        resolve({ success: false, output: "", error: err.message });
+        clearTimeout(timer);
+        if (!resolved) {
+          resolved = true;
+          resolve({ success: false, output: "", error: err.message });
+        }
       });
     });
   } catch (err) {
@@ -301,6 +345,76 @@ export async function sendEmailTool(
 
     await transport.sendMail({ from: settings.smtpUser, to, subject, text: body });
     return { success: true, output: `Email sent to ${to}` };
+  } catch (err) {
+    const error = err instanceof Error ? err.message : String(err);
+    return { success: false, output: "", error };
+  }
+}
+
+export async function delegateToAgentTool(
+  fromAgentId: number,
+  fromAgentName: string,
+  toAgentName: string,
+  task: string
+): Promise<ToolResult & { delegationMessageId?: number }> {
+  await logActivity(fromAgentId, fromAgentName, "delegate", `Delegating to ${toAgentName}: ${task.substring(0, 80)}`);
+
+  try {
+    const [toAgent] = await db
+      .select()
+      .from(agentsTable)
+      .where(eq(agentsTable.name, toAgentName))
+      .limit(1);
+
+    if (!toAgent) {
+      return { success: false, output: "", error: `Agent "${toAgentName}" not found` };
+    }
+
+    const [msg] = await db
+      .insert(agentMessagesTable)
+      .values({ fromAgentId, toAgentId: toAgent.id, content: task })
+      .returning();
+
+    return {
+      success: true,
+      output: `Delegated to ${toAgent.name} (ID ${toAgent.id}). Message ID: ${msg?.id}. The agent will process this task autonomously.`,
+      delegationMessageId: msg?.id,
+    };
+  } catch (err) {
+    const error = err instanceof Error ? err.message : String(err);
+    return { success: false, output: "", error };
+  }
+}
+
+export async function sendWebhookTool(
+  agentId: number,
+  agentName: string,
+  payload: Record<string, unknown>
+): Promise<ToolResult> {
+  await logActivity(agentId, agentName, "webhook", `Sending webhook notification`);
+
+  try {
+    const settings = await getSettings();
+    if (!settings?.webhookUrl) {
+      return { success: false, output: "", error: "No webhook URL configured in Settings" };
+    }
+
+    const res = await fetch(settings.webhookUrl, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        agent: agentName,
+        agentId,
+        timestamp: new Date().toISOString(),
+        ...payload,
+      }),
+    });
+
+    if (!res.ok) {
+      return { success: false, output: "", error: `Webhook responded with ${res.status}` };
+    }
+
+    return { success: true, output: `Webhook delivered to ${settings.webhookUrl} (${res.status})` };
   } catch (err) {
     const error = err instanceof Error ? err.message : String(err);
     return { success: false, output: "", error };

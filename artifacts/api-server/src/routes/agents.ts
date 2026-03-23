@@ -7,7 +7,7 @@ import {
   agentMessagesTable,
   activityLogTable,
 } from "@workspace/db";
-import { eq, desc } from "drizzle-orm";
+import { eq, desc, or } from "drizzle-orm";
 import { runAgentChat, runAgentChatInternal } from "../lib/agentRunner";
 import { persistAndEmitActivity, agentStatusEmitter, emitAgentStatus } from "../lib/activityEmitter";
 
@@ -125,13 +125,13 @@ router.post("/agents/:id/chat", async (req, res): Promise<void> => {
   await runAgentChat(id, content, conversationId ?? null, res);
 });
 
-// Agent-to-agent messages
+// Agent-to-agent messages (both sent and received for full collaboration traceability)
 router.get("/agents/:id/messages", async (req, res): Promise<void> => {
   const id = parseInt(Array.isArray(req.params.id) ? req.params.id[0]! : req.params.id, 10);
   const msgs = await db
     .select()
     .from(agentMessagesTable)
-    .where(eq(agentMessagesTable.toAgentId, id))
+    .where(or(eq(agentMessagesTable.toAgentId, id), eq(agentMessagesTable.fromAgentId, id)))
     .orderBy(desc(agentMessagesTable.timestamp))
     .limit(50);
   res.json(msgs);

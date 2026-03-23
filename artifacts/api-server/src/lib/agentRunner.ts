@@ -24,6 +24,8 @@ import {
   fileListTool,
   codeExecTool,
   sendEmailTool,
+  delegateToAgentTool,
+  sendWebhookTool,
 } from "./agentTools";
 import { persistAndEmitActivity, emitAgentStatus } from "./activityEmitter";
 
@@ -175,6 +177,24 @@ Format your response as:
               toolResult = result.output + (result.error ? `\nError: ${result.error}` : "");
             } else if (fnName === "send_email") {
               const result = await sendEmailTool(agentId, agent.name, String(args.to ?? ""), String(args.subject ?? ""), String(args.body ?? ""));
+              toolResult = result.output + (result.error ? `\nError: ${result.error}` : "");
+            } else if (fnName === "delegate_to_agent") {
+              const result = await delegateToAgentTool(agentId, agent.name, String(args.to_agent ?? ""), String(args.task ?? ""));
+              toolResult = result.output + (result.error ? `\nError: ${result.error}` : "");
+              if (result.delegationMessageId !== undefined) {
+                const msgId = result.delegationMessageId;
+                setImmediate(async () => {
+                  const toAgentName = String(args.to_agent ?? "");
+                  const { runAgentChatInternal } = await import("./agentRunner");
+                  const toAgentRow = await db.select().from(agentsTable).where(eq(agentsTable.name, toAgentName)).limit(1);
+                  if (toAgentRow[0]) {
+                    await runAgentChatInternal(toAgentRow[0].id, `[DELEGATION from ${agent.name}]: ${args.task}`, null, msgId).catch(console.error);
+                  }
+                });
+              }
+            } else if (fnName === "send_webhook") {
+              const payload = (args.payload as Record<string, unknown>) ?? { message: args.message ?? "Agent notification" };
+              const result = await sendWebhookTool(agentId, agent.name, payload);
               toolResult = result.output + (result.error ? `\nError: ${result.error}` : "");
             }
           } catch (err) {
@@ -355,6 +375,38 @@ function buildToolDefinitions(toolsEnabled: string[]) {
         },
       },
     },
+    {
+      type: "function" as const,
+      function: {
+        name: "delegate_to_agent",
+        description: "Delegate a subtask to another agent by name. The target agent will process it autonomously and store its response. Use this to coordinate multi-agent workflows.",
+        parameters: {
+          type: "object",
+          properties: {
+            to_agent: { type: "string", description: "Exact name of the target agent to delegate to" },
+            task: { type: "string", description: "The task or question to send to the target agent" },
+          },
+          required: ["to_agent", "task"],
+        },
+      },
+    },
+    {
+      type: "function" as const,
+      function: {
+        name: "send_webhook",
+        description: "Send a webhook notification to the configured webhook URL with a custom payload.",
+        parameters: {
+          type: "object",
+          properties: {
+            payload: {
+              type: "object",
+              description: "JSON object payload to send to the webhook URL",
+            },
+          },
+          required: ["payload"],
+        },
+      },
+    },
   ];
 
   const toolMap: Record<string, typeof all[0]> = {
@@ -365,6 +417,8 @@ function buildToolDefinitions(toolsEnabled: string[]) {
     file_list: all[4]!,
     code_exec: all[5]!,
     send_email: all[6]!,
+    delegate_to_agent: all[7]!,
+    send_webhook: all[8]!,
   };
 
   if (toolsEnabled.includes("all") || toolsEnabled.length === 0) return all;
@@ -485,6 +539,23 @@ Provide a clear, well-structured answer. End your response naturally.`,
             } else if (fnName === "send_email") {
               const result = await sendEmailTool(agentId, agent.name, String(args.to ?? ""), String(args.subject ?? ""), String(args.body ?? ""));
               toolResult = result.output;
+            } else if (fnName === "delegate_to_agent") {
+              const result = await delegateToAgentTool(agentId, agent.name, String(args.to_agent ?? ""), String(args.task ?? ""));
+              toolResult = result.output + (result.error ? `\nError: ${result.error}` : "");
+              if (result.delegationMessageId !== undefined) {
+                const msgId = result.delegationMessageId;
+                setImmediate(async () => {
+                  const toAgentName = String(args.to_agent ?? "");
+                  const toAgentRow = await db.select().from(agentsTable).where(eq(agentsTable.name, toAgentName)).limit(1);
+                  if (toAgentRow[0]) {
+                    await runAgentChatInternal(toAgentRow[0].id, `[DELEGATION from ${agent.name}]: ${args.task}`, null, msgId).catch(console.error);
+                  }
+                });
+              }
+            } else if (fnName === "send_webhook") {
+              const payload = (args.payload as Record<string, unknown>) ?? { message: args.message ?? "Agent notification" };
+              const result = await sendWebhookTool(agentId, agent.name, payload);
+              toolResult = result.output + (result.error ? `\nError: ${result.error}` : "");
             }
           } catch (toolErr) {
             toolResult = `Error: ${toolErr instanceof Error ? toolErr.message : String(toolErr)}`;

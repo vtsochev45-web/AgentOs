@@ -1,13 +1,15 @@
-import { useState } from "react";
+import { useState, useEffect, useCallback } from "react";
 import { useListAgents, useCreateAgent } from "@workspace/api-client-react";
 import { Link } from "wouter";
 import { useForm } from "react-hook-form";
 import { z } from "zod";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { AgentStatusBadge } from "@/components/ui/AgentStatusBadge";
-import { Bot, Plus, X, Search, Terminal, Code, MessageSquare } from "lucide-react";
+import { Bot, Plus, X, Search, Terminal, Code, MessageSquare, GitBranch, Webhook } from "lucide-react";
 import { useQueryClient } from "@tanstack/react-query";
 import { getListAgentsQueryKey } from "@workspace/api-client-react";
+import { useSSEAgentStatus } from "@/hooks/use-sse";
+import type { Agent } from "@workspace/api-client-react";
 
 const createSchema = z.object({
   name: z.string().min(2, "Name must be at least 2 characters"),
@@ -20,13 +22,33 @@ const AVAILABLE_TOOLS = [
   { id: "vps_shell", label: "VPS Shell", icon: Terminal },
   { id: "code_exec", label: "Code Exec", icon: Code },
   { id: "send_email", label: "Email/Messaging", icon: MessageSquare },
+  { id: "delegate_to_agent", label: "Delegate to Agent", icon: GitBranch },
+  { id: "send_webhook", label: "Send Webhook", icon: Webhook },
 ];
 
 export default function Agents() {
-  const { data: agents, isLoading } = useListAgents();
+  const { data: agentsRaw, isLoading } = useListAgents();
   const [isCreateOpen, setIsCreateOpen] = useState(false);
+  const [statusOverrides, setStatusOverrides] = useState<Record<number, string>>({});
   const queryClient = useQueryClient();
-  
+
+  const handleStatusChange = useCallback((ev: { agentId: number; status: string }) => {
+    setStatusOverrides((prev) => ({ ...prev, [ev.agentId]: ev.status }));
+    queryClient.invalidateQueries({ queryKey: getListAgentsQueryKey() });
+  }, [queryClient]);
+
+  const { connect, disconnect } = useSSEAgentStatus(handleStatusChange);
+
+  useEffect(() => {
+    connect();
+    return () => disconnect();
+  }, [connect, disconnect]);
+
+  const agents = (agentsRaw ?? []).map((a) => ({
+    ...a,
+    status: (statusOverrides[a.id] ?? a.status) as Agent["status"],
+  }));
+
   const createMutation = useCreateAgent({
     mutation: {
       onSuccess: () => {

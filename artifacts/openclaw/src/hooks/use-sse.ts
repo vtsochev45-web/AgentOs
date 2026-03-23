@@ -133,3 +133,50 @@ export function useSSEActivity() {
 
   return { events, isConnected, connect, disconnect };
 }
+
+export interface AgentStatusEvent {
+  agentId: number;
+  status: string;
+}
+
+export function useSSEAgentStatus(onStatusChange: (ev: AgentStatusEvent) => void) {
+  const [isConnected, setIsConnected] = useState(false);
+  const eventSourceRef = useRef<EventSource | null>(null);
+  const onStatusChangeRef = useRef(onStatusChange);
+  onStatusChangeRef.current = onStatusChange;
+
+  const connect = useCallback(() => {
+    if (eventSourceRef.current) return;
+
+    const es = new EventSource("/api/agents/stream");
+    eventSourceRef.current = es;
+
+    es.onopen = () => setIsConnected(true);
+
+    es.onmessage = (e: MessageEvent<string>) => {
+      try {
+        const parsed = JSON.parse(e.data) as AgentStatusEvent;
+        onStatusChangeRef.current(parsed);
+      } catch (err) {
+        console.error("Failed to parse agent status event", err);
+      }
+    };
+
+    es.onerror = () => {
+      setIsConnected(false);
+      es.close();
+      eventSourceRef.current = null;
+      setTimeout(connect, 3000);
+    };
+  }, []);
+
+  const disconnect = useCallback(() => {
+    if (eventSourceRef.current) {
+      eventSourceRef.current.close();
+      eventSourceRef.current = null;
+      setIsConnected(false);
+    }
+  }, []);
+
+  return { isConnected, connect, disconnect };
+}
