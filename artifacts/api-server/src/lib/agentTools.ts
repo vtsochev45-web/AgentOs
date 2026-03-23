@@ -15,7 +15,12 @@ export interface ToolResult {
 
 async function getSettings() {
   const [settings] = await db.select().from(appSettingsTable).limit(1);
-  return settings;
+  if (!settings) return settings;
+  return {
+    ...settings,
+    smtpPassword: settings.smtpPassword ? (() => { try { return decrypt(settings.smtpPassword!); } catch { return null; } })() : null,
+    braveApiKey: settings.braveApiKey ? (() => { try { return decrypt(settings.braveApiKey!); } catch { return null; } })() : null,
+  };
 }
 
 async function getVpsCredentials() {

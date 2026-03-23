@@ -2,7 +2,7 @@ import { Router, type IRouter } from "express";
 import { db } from "@workspace/db";
 import { vpsConfigTable } from "@workspace/db";
 import { encrypt, decrypt } from "../lib/encryption";
-import { execWithCreds, execStreaming, sftpReadFile, sftpWriteFile, sftpListDir, sftpUnlink, type SshCredentials } from "../lib/sshManager";
+import { exec, execStreaming, sftpReadFileById, sftpWriteFileById, sftpListDirById, sftpUnlinkById, sftpReadFileBuffer, type SshCredentials } from "../lib/sshManager";
 import { eq } from "drizzle-orm";
 import { emitActivity } from "../lib/activityEmitter";
 
@@ -76,7 +76,7 @@ router.post("/vps/test", async (req, res): Promise<void> => {
   if (!creds) { res.json({ success: false, message: "VPS not configured" }); return; }
 
   try {
-    const result = await execWithCreds(creds, "echo 'ok'", 10000);
+    const result = await exec(creds.id, creds, "echo 'ok'", 10000);
     res.json({ success: result.exitCode === 0, message: result.stdout.trim() === "ok" ? "Connected successfully" : result.stdout });
   } catch (err) {
     res.json({ success: false, message: err instanceof Error ? err.message : String(err) });
@@ -88,7 +88,7 @@ router.get("/vps/stats", async (req, res): Promise<void> => {
   if (!creds) { res.status(404).json({ error: "VPS not configured" }); return; }
 
   try {
-    const { stdout } = await execWithCreds(creds,
+    const { stdout } = await exec(creds.id, creds,
       `echo "CPU:$(top -bn1 | grep 'Cpu(s)' | awk '{print $2}' | tr -d '%us,')" && ` +
       `echo "MEM:$(free -m | awk 'NR==2{print $3":"$2}')" && ` +
       `echo "DISK:$(df -BG / | awk 'NR==2{print $3":"$2}' | tr -d 'G')" && ` +
@@ -123,7 +123,7 @@ router.get("/vps/processes", async (req, res): Promise<void> => {
   if (!creds) { res.status(404).json({ error: "VPS not configured" }); return; }
 
   try {
-    const { stdout } = await execWithCreds(creds, "ps aux --sort=-%cpu | head -30 | tail -n +2", 10000);
+    const { stdout } = await exec(creds.id, creds, "ps aux --sort=-%cpu | head -30 | tail -n +2", 10000);
     const processes = stdout.trim().split("\n").map((line) => {
       const parts = line.trim().split(/\s+/);
       return {
@@ -147,7 +147,7 @@ router.post("/vps/processes/:pid/kill", async (req, res): Promise<void> => {
   const pid = parseInt(Array.isArray(req.params.pid) ? req.params.pid[0]! : req.params.pid, 10);
 
   try {
-    const { stdout, stderr, exitCode } = await execWithCreds(creds, `kill -9 ${pid} 2>&1 && echo "killed"`, 10000);
+    const { stdout, stderr, exitCode } = await exec(creds.id, creds, `kill -9 ${pid} 2>&1 && echo "killed"`, 10000);
     res.json({ success: exitCode === 0, stdout: stdout + stderr, stderr: "" });
   } catch (err) {
     res.status(500).json({ error: err instanceof Error ? err.message : String(err) });
@@ -159,11 +159,11 @@ router.get("/vps/services", async (req, res): Promise<void> => {
   if (!creds) { res.status(404).json({ error: "VPS not configured" }); return; }
 
   try {
-    const { stdout: systemdOut } = await execWithCreds(creds,
+    const { stdout: systemdOut } = await exec(creds.id, creds,
       "systemctl list-units --type=service --state=loaded --no-pager --no-legend 2>/dev/null | head -20 || echo ''",
       10000
     );
-    const { stdout: pm2Out } = await execWithCreds(creds,
+    const { stdout: pm2Out } = await exec(creds.id, creds,
       "pm2 jlist 2>/dev/null || echo '[]'",
       10000
     );
@@ -211,7 +211,7 @@ router.post("/vps/services/:name/:action", async (req, res): Promise<void> => {
   }
 
   try {
-    const { stdout, stderr, exitCode } = await execWithCreds(creds,
+    const { stdout, stderr, exitCode } = await exec(creds.id, creds,
       `systemctl ${action} ${name}.service 2>&1 || pm2 ${action} ${name} 2>&1`,
       15000
     );
@@ -229,7 +229,7 @@ router.get("/vps/files", async (req, res): Promise<void> => {
   const path = String(req.query.path ?? "/");
 
   try {
-    const entries = await sftpListDir(creds, path);
+    const entries = await sftpListDirById(creds.id, creds, path);
     res.json(entries);
   } catch (err) {
     res.status(500).json({ error: err instanceof Error ? err.message : String(err) });
@@ -244,7 +244,7 @@ router.get("/vps/files/read", async (req, res): Promise<void> => {
   if (!path) { res.status(400).json({ error: "path required" }); return; }
 
   try {
-    const content = await sftpReadFile(creds, path);
+    const content = await sftpReadFileById(creds.id, creds, path);
     res.json({ path, content, encoding: "utf8" });
   } catch (err) {
     res.status(500).json({ error: err instanceof Error ? err.message : String(err) });
@@ -259,7 +259,7 @@ router.post("/vps/files/write", async (req, res): Promise<void> => {
   if (!path) { res.status(400).json({ error: "path required" }); return; }
 
   try {
-    await sftpWriteFile(creds, path, content);
+    await sftpWriteFileById(creds.id, creds, path, content);
     emitActivity({ actionType: "file_write", detail: `Wrote: ${path}`, timestamp: new Date().toISOString() });
     res.json({ success: true, stdout: `Written to ${path}`, stderr: "" });
   } catch (err) {
@@ -275,7 +275,7 @@ router.delete("/vps/files/delete", async (req, res): Promise<void> => {
   if (!filePath) { res.status(400).json({ error: "path required" }); return; }
 
   try {
-    await sftpUnlink(creds, filePath);
+    await sftpUnlinkById(creds.id, creds, filePath);
     emitActivity({ actionType: "file_delete", detail: `Deleted: ${filePath}`, timestamp: new Date().toISOString() });
     res.json({ success: true, stdout: `Deleted ${filePath}`, stderr: "" });
   } catch (err) {
@@ -291,7 +291,7 @@ router.post("/vps/files/upload", async (req, res): Promise<void> => {
   if (!filePath || content === undefined) { res.status(400).json({ error: "path and content required" }); return; }
 
   try {
-    await sftpWriteFile(creds, filePath, content);
+    await sftpWriteFileById(creds.id, creds, filePath, content);
     emitActivity({ actionType: "file_write", detail: `Uploaded: ${filePath}`, timestamp: new Date().toISOString() });
     res.json({ success: true, stdout: `Uploaded to ${filePath}`, stderr: "" });
   } catch (err) {
@@ -312,7 +312,7 @@ router.post("/vps/processes/restart", async (req, res): Promise<void> => {
   }
 
   try {
-    const { stdout, stderr, exitCode } = await execWithCreds(creds,
+    const { stdout, stderr, exitCode } = await exec(creds.id, creds,
       `systemctl restart ${name}.service 2>&1 || pm2 restart ${name} 2>&1`,
       15000
     );
@@ -331,7 +331,7 @@ router.post("/vps/exec", async (req, res): Promise<void> => {
   if (!command) { res.status(400).json({ error: "command required" }); return; }
 
   try {
-    const result = await execWithCreds(creds, command, timeout ?? 30000);
+    const result = await exec(creds.id, creds, command, timeout ?? 30000);
     emitActivity({ actionType: "vps_exec", detail: `Ran: ${command.substring(0, 80)}`, timestamp: new Date().toISOString() });
     res.json({ success: result.exitCode === 0, stdout: result.stdout, stderr: result.stderr, exitCode: result.exitCode });
   } catch (err) {
@@ -363,7 +363,7 @@ router.get("/vps/logs", async (req, res): Promise<void> => {
 
   try {
     const command = `tail -n ${lines} -f "${logPath}" 2>&1`;
-    stopStream = await execStreaming(creds, command, (chunk) => {
+    stopStream = await execStreaming(creds as SshCredentials, command, (chunk) => {
       const logLines = chunk.split("\n");
       for (const line of logLines) {
         if (line.trim() && !res.writableEnded) {
@@ -376,6 +376,24 @@ router.get("/vps/logs", async (req, res): Promise<void> => {
       res.write(`data: ${JSON.stringify({ error: err instanceof Error ? err.message : String(err) })}\n\n`);
       res.end();
     }
+  }
+});
+
+router.get("/vps/files/download", async (req, res): Promise<void> => {
+  const creds = await getVpsCreds();
+  if (!creds) { res.status(404).json({ error: "VPS not configured" }); return; }
+
+  const filePath = String(req.query.path ?? "");
+  if (!filePath) { res.status(400).json({ error: "path required" }); return; }
+
+  try {
+    const buffer = await sftpReadFileBuffer(creds.id, creds, filePath);
+    const filename = filePath.split("/").pop() ?? "download";
+    res.setHeader("Content-Disposition", `attachment; filename="${filename}"`);
+    res.setHeader("Content-Type", "application/octet-stream");
+    res.send(buffer);
+  } catch (err) {
+    res.status(500).json({ error: err instanceof Error ? err.message : String(err) });
   }
 });
 

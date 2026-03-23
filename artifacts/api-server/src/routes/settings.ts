@@ -2,8 +2,14 @@ import { Router, type IRouter } from "express";
 import { db } from "@workspace/db";
 import { appSettingsTable } from "@workspace/db";
 import { eq } from "drizzle-orm";
+import { encrypt, decrypt } from "../lib/encryption";
 
 const router: IRouter = Router();
+
+function safeDecrypt(value: string | null | undefined): string | null {
+  if (!value) return null;
+  try { return decrypt(value); } catch { return null; }
+}
 
 router.get("/settings", async (req, res): Promise<void> => {
   const [settings] = await db.select().from(appSettingsTable).limit(1);
@@ -47,10 +53,10 @@ router.put("/settings", async (req, res): Promise<void> => {
   if (smtpHost !== undefined) updates.smtpHost = smtpHost;
   if (smtpPort !== undefined) updates.smtpPort = smtpPort;
   if (smtpUser !== undefined) updates.smtpUser = smtpUser;
-  if (smtpPassword !== undefined) updates.smtpPassword = smtpPassword;
+  if (smtpPassword !== undefined && smtpPassword !== "") updates.smtpPassword = encrypt(smtpPassword);
   if (webhookUrl !== undefined) updates.webhookUrl = webhookUrl;
   if (searchProvider !== undefined) updates.searchProvider = searchProvider;
-  if (braveApiKey !== undefined) updates.braveApiKey = braveApiKey;
+  if (braveApiKey !== undefined && braveApiKey !== "") updates.braveApiKey = encrypt(braveApiKey);
 
   const [existing] = await db.select().from(appSettingsTable).limit(1);
   let settings;
@@ -72,4 +78,5 @@ router.put("/settings", async (req, res): Promise<void> => {
   });
 });
 
+export { safeDecrypt };
 export default router;

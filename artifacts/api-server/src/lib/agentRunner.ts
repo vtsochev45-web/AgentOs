@@ -10,6 +10,7 @@ import {
   agentsTable,
   agentConversationsTable,
   agentConversationMessagesTable,
+  agentMessagesTable,
   activityLogTable,
   appSettingsTable,
 } from "@workspace/db";
@@ -363,4 +364,150 @@ function buildToolDefinitions(toolsEnabled: string[]) {
 
   if (toolsEnabled.includes("all") || toolsEnabled.length === 0) return all;
   return toolsEnabled.map((t) => toolMap[t]).filter(Boolean) as typeof all;
+}
+
+export async function runAgentChatInternal(
+  agentId: number,
+  userMessage: string,
+  conversationId: number | null,
+  delegationMessageId: number | null
+): Promise<void> {
+  const [agent] = await db.select().from(agentsTable).where(eq(agentsTable.id, agentId));
+  if (!agent) return;
+
+  const toolsEnabled = (agent.toolsEnabled ?? []) as string[];
+
+  let convId = conversationId;
+  if (!convId) {
+    const [conv] = await db
+      .insert(agentConversationsTable)
+      .values({ agentId, title: userMessage.substring(0, 80) })
+      .returning();
+    convId = conv!.id;
+  }
+
+  await db.insert(agentConversationMessagesTable).values({
+    conversationId: convId,
+    role: "user",
+    content: userMessage,
+  });
+
+  const history = await db
+    .select()
+    .from(agentConversationMessagesTable)
+    .where(eq(agentConversationMessagesTable.conversationId, convId))
+    .orderBy(agentConversationMessagesTable.timestamp)
+    .limit(20);
+
+  await setAgentStatus(agentId, "thinking");
+
+  const tools = buildToolDefinitions(toolsEnabled);
+  const sources: Array<{ title: string; url: string; snippet: string; favicon?: string | null }> = [];
+
+  const messages: ChatMsg[] = [
+    {
+      role: "system",
+      content: `You are ${agent.name}. ${agent.persona}
+
+You have access to tools and should use them when helpful.
+
+Provide a clear, well-structured answer. End your response naturally.`,
+    },
+    ...history.slice(0, -1).map((m) => ({
+      role: m.role as "user" | "assistant",
+      content: m.content,
+    })),
+    { role: "user" as const, content: userMessage },
+  ];
+
+  let finalAnswer = "";
+
+  try {
+    let continueLoop = true;
+    let iterations = 0;
+
+    while (continueLoop && iterations < 5) {
+      iterations++;
+
+      const completion = await openai.chat.completions.create({
+        model: "gpt-5.2",
+        max_completion_tokens: 4096,
+        messages: messages as Parameters<typeof openai.chat.completions.create>[0]["messages"],
+        ...(tools.length > 0 ? { tools, tool_choice: "auto" } : {}),
+        stream: false,
+      });
+
+      const choice = completion.choices[0];
+      if (!choice) break;
+
+      const msg = choice.message;
+
+      if (msg.tool_calls && msg.tool_calls.length > 0) {
+        messages.push({ role: "assistant" as const, content: msg.content ?? "" });
+
+        for (const toolCall of msg.tool_calls) {
+          const tc = toolCall as { id: string; type: "function"; function: { name: string; arguments: string } };
+          const fnName = tc.function.name;
+          let args: Record<string, unknown> = {};
+          try { args = JSON.parse(tc.function.arguments); } catch {}
+
+          await setAgentStatus(agentId, getToolStatus(fnName));
+          let toolResult = "";
+
+          try {
+            if (fnName === "web_search") {
+              const result = await webSearchTool(String(args.query ?? ""), agentId, agent.name);
+              toolResult = result.output;
+              if (result.sources) sources.push(...result.sources);
+            } else if (fnName === "vps_shell") {
+              const result = await vpsShellTool(String(args.command ?? ""), agentId, agent.name);
+              toolResult = result.output + (result.error ? `\nError: ${result.error}` : "");
+            } else if (fnName === "file_read") {
+              const result = await fileReadTool(agentId, agent.name, String(args.path ?? ""));
+              toolResult = result.output;
+            } else if (fnName === "file_write") {
+              const result = await fileWriteTool(agentId, agent.name, String(args.path ?? ""), String(args.content ?? ""));
+              toolResult = result.output;
+            } else if (fnName === "file_list") {
+              const result = await fileListTool(agentId, agent.name, String(args.dir ?? "/"));
+              toolResult = result.output;
+            } else if (fnName === "code_exec") {
+              const rawLang = String(args.language ?? "node");
+              const lang: "node" | "python" = rawLang === "python" ? "python" : "node";
+              const result = await codeExecTool(agentId, agent.name, String(args.code ?? ""), lang);
+              toolResult = result.output + (result.error ? `\nError: ${result.error}` : "");
+            } else if (fnName === "send_email") {
+              const result = await sendEmailTool(agentId, agent.name, String(args.to ?? ""), String(args.subject ?? ""), String(args.body ?? ""));
+              toolResult = result.output;
+            }
+          } catch (toolErr) {
+            toolResult = `Error: ${toolErr instanceof Error ? toolErr.message : String(toolErr)}`;
+          }
+
+          messages.push({ role: "tool" as const, content: toolResult, tool_call_id: tc.id });
+        }
+      } else {
+        finalAnswer = msg.content ?? "";
+        continueLoop = false;
+      }
+    }
+
+    const answerBody = finalAnswer.replace(/FOLLOW_UPS:[\s\S]+$/, "").trim();
+
+    await db.insert(agentConversationMessagesTable).values({
+      conversationId: convId!,
+      role: "assistant",
+      content: answerBody,
+      sourcesJson: sources.length > 0 ? sources : null,
+    });
+
+    if (delegationMessageId !== null) {
+      await db
+        .update(agentMessagesTable)
+        .set({ response: answerBody })
+        .where(eq(agentMessagesTable.id, delegationMessageId));
+    }
+  } finally {
+    await setAgentStatus(agentId, "idle");
+  }
 }

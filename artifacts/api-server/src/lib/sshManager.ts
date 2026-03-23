@@ -57,21 +57,17 @@ async function connect(id: number, creds: SshCredentials): Promise<Client> {
   });
 }
 
-export async function exec(
-  creds: SshCredentials,
+function execOnClient(
+  client: Client,
   command: string,
-  timeout = 30000
+  timeout: number
 ): Promise<{ stdout: string; stderr: string; exitCode: number | null }> {
-  const client = await connect(-1, creds);
   return new Promise((resolve, reject) => {
     let stdout = "";
     let stderr = "";
 
     client.exec(command, (err, stream) => {
-      if (err) {
-        reject(err);
-        return;
-      }
+      if (err) { reject(err); return; }
 
       const timer = setTimeout(() => {
         stream.destroy();
@@ -83,14 +79,20 @@ export async function exec(
           clearTimeout(timer);
           resolve({ stdout, stderr, exitCode: code });
         })
-        .on("data", (data: Buffer) => {
-          stdout += data.toString();
-        })
-        .stderr.on("data", (data: Buffer) => {
-          stderr += data.toString();
-        });
+        .on("data", (data: Buffer) => { stdout += data.toString(); })
+        .stderr.on("data", (data: Buffer) => { stderr += data.toString(); });
     });
   });
+}
+
+export async function exec(
+  id: number,
+  creds: SshCredentials,
+  command: string,
+  timeout = 30000
+): Promise<{ stdout: string; stderr: string; exitCode: number | null }> {
+  const client = await connect(id, creds);
+  return execOnClient(client, command, timeout);
 }
 
 export async function execWithCreds(
@@ -108,46 +110,97 @@ export async function execWithCreds(
       readyTimeout: 15000,
     };
 
-    if (creds.authType === "password" && creds.password) {
+    if (creds.password) {
       config.password = creds.password;
-    } else if (creds.authType === "key" && creds.privateKey) {
+    } else if (creds.privateKey) {
       config.privateKey = creds.privateKey;
     }
 
     client
       .on("ready", () => {
-        let stdout = "";
-        let stderr = "";
-
-        client.exec(command, (err, stream) => {
-          if (err) {
-            client.end();
-            reject(err);
-            return;
-          }
-
-          const timer = setTimeout(() => {
-            stream.destroy();
-            client.end();
-            reject(new Error(`Command timed out after ${timeout}ms`));
-          }, timeout);
-
-          stream
-            .on("close", (code: number | null) => {
-              clearTimeout(timer);
-              client.end();
-              resolve({ stdout, stderr, exitCode: code });
-            })
-            .on("data", (data: Buffer) => {
-              stdout += data.toString();
-            })
-            .stderr.on("data", (data: Buffer) => {
-              stderr += data.toString();
-            });
-        });
+        execOnClient(client, command, timeout)
+          .then((r) => { client.end(); resolve(r); })
+          .catch((e) => { client.end(); reject(e); });
       })
       .on("error", reject)
       .connect(config);
+  });
+}
+
+function openSftp(client: Client): Promise<import("ssh2").SFTPWrapper> {
+  return new Promise((resolve, reject) => {
+    client.sftp((err, sftp) => {
+      if (err) { reject(err); return; }
+      resolve(sftp);
+    });
+  });
+}
+
+export async function sftpReadFileById(id: number, creds: SshCredentials, remotePath: string): Promise<string> {
+  const client = await connect(id, creds);
+  const sftp = await openSftp(client);
+  return new Promise((resolve, reject) => {
+    sftp.readFile(remotePath, "utf8", (err, data) => {
+      if (err) { reject(err); return; }
+      resolve(data as unknown as string);
+    });
+  });
+}
+
+export async function sftpWriteFileById(id: number, creds: SshCredentials, remotePath: string, content: string): Promise<void> {
+  const client = await connect(id, creds);
+  const sftp = await openSftp(client);
+  return new Promise((resolve, reject) => {
+    sftp.writeFile(remotePath, content, (err) => {
+      if (err) { reject(err); return; }
+      resolve();
+    });
+  });
+}
+
+export async function sftpListDirById(id: number, creds: SshCredentials, remotePath: string): Promise<Array<{
+  name: string; path: string; type: string; size: number; modifiedAt: string;
+}>> {
+  const client = await connect(id, creds);
+  const sftp = await openSftp(client);
+  return new Promise((resolve, reject) => {
+    sftp.readdir(remotePath, (err, list) => {
+      if (err) { reject(err); return; }
+      const entries = list.map((item) => {
+        const isDir = item.attrs.isDirectory?.() ?? (item.longname[0] === "d");
+        const isLink = item.longname[0] === "l";
+        return {
+          name: item.filename,
+          path: `${remotePath.replace(/\/$/, "")}/${item.filename}`,
+          type: isLink ? "symlink" : isDir ? "directory" : "file",
+          size: item.attrs.size ?? 0,
+          modifiedAt: new Date((item.attrs.mtime ?? 0) * 1000).toISOString(),
+        };
+      });
+      resolve(entries);
+    });
+  });
+}
+
+export async function sftpUnlinkById(id: number, creds: SshCredentials, remotePath: string): Promise<void> {
+  const client = await connect(id, creds);
+  const sftp = await openSftp(client);
+  return new Promise((resolve, reject) => {
+    sftp.unlink(remotePath, (err) => {
+      if (err) { reject(err); return; }
+      resolve();
+    });
+  });
+}
+
+export async function sftpReadFileBuffer(id: number, creds: SshCredentials, remotePath: string): Promise<Buffer> {
+  const client = await connect(id, creds);
+  const sftp = await openSftp(client);
+  return new Promise((resolve, reject) => {
+    sftp.readFile(remotePath, (err, data) => {
+      if (err) { reject(err); return; }
+      resolve(data);
+    });
   });
 }
 
@@ -162,9 +215,9 @@ export async function sftpReadFile(creds: SshCredentials, remotePath: string): P
       readyTimeout: 15000,
     };
 
-    if (creds.authType === "password" && creds.password) {
+    if (creds.password) {
       config.password = creds.password;
-    } else if (creds.authType === "key" && creds.privateKey) {
+    } else if (creds.privateKey) {
       config.privateKey = creds.privateKey;
     }
 

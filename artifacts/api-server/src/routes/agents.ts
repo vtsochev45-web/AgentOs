@@ -8,8 +8,8 @@ import {
   activityLogTable,
 } from "@workspace/db";
 import { eq, desc } from "drizzle-orm";
-import { runAgentChat } from "../lib/agentRunner";
-import { emitActivity, agentStatusEmitter } from "../lib/activityEmitter";
+import { runAgentChat, runAgentChatInternal } from "../lib/agentRunner";
+import { emitActivity, agentStatusEmitter, emitAgentStatus } from "../lib/activityEmitter";
 
 const router: IRouter = Router();
 
@@ -79,6 +79,7 @@ router.patch("/agents/:id/status", async (req, res): Promise<void> => {
   const { status } = req.body as { status: string };
   const [agent] = await db.update(agentsTable).set({ status, lastActiveAt: new Date() }).where(eq(agentsTable.id, id)).returning();
   if (!agent) { res.status(404).json({ error: "Agent not found" }); return; }
+  emitAgentStatus({ agentId: id, status });
   res.json(agent);
 });
 
@@ -162,22 +163,11 @@ router.post("/agents/:id/messages", async (req, res): Promise<void> => {
     const delegationPrompt = `[DELEGATION from ${fromAgent?.name ?? "Agent"} #${fromAgentId}]: ${content}`;
     setImmediate(async () => {
       try {
-        const { Writable } = await import("stream");
-        const sink = new Writable({ write(_chunk, _enc, cb) { cb(); } });
-        Object.assign(sink, {
-          setHeader: () => {},
-          writableEnded: false,
-          write(chunk: unknown) {
-            (this as unknown as { writableEnded: boolean }).writableEnded = false;
-            return true;
-          },
-          end() {
-            (this as unknown as { writableEnded: boolean }).writableEnded = true;
-          },
-        });
-        const fakeRes = sink as unknown as import("express").Response;
-        await runAgentChat(toAgent.id, delegationPrompt, null, fakeRes);
-      } catch {}
+        await runAgentChatInternal(toAgent.id, delegationPrompt, null, msg.id);
+      } catch (err) {
+        // Delegation error is non-fatal — log and continue
+        console.error(`[delegation] Failed for agent ${toAgent.id}:`, err);
+      }
     });
   }
 });
