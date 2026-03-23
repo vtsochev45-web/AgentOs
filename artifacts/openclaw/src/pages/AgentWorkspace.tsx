@@ -24,6 +24,7 @@ import {
   ArrowUpRight,
   ArrowDownLeft,
 } from "lucide-react";
+import { apiFetch } from "@/lib/api";
 import { formatDistanceToNow } from "date-fns";
 
 type WorkspaceTab = "chat" | "delegation" | "files";
@@ -56,7 +57,7 @@ export default function AgentWorkspace() {
 
   useEffect(() => {
     if (activeTab === "files") {
-      fetch(`/api/agents/${agentId}/files`)
+      apiFetch(`/api/agents/${agentId}/files`)
         .then((r) => r.json())
         .then((data: AgentFileRow[]) => setAgentFiles(data))
         .catch(() => setAgentFiles([]));

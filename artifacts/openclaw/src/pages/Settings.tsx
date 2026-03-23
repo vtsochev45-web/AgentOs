@@ -1,9 +1,10 @@
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
+import { useState } from "react";
 import type { VpsConfig, AppSettings } from "@workspace/api-client-react";
 import { useGetSettings, useSaveSettings, useGetVpsConfig, useSaveVpsConfig } from "@workspace/api-client-react";
-import { Settings as SettingsIcon, Server, Brain, Mail, Save, Search, Webhook } from "lucide-react";
+import { Settings as SettingsIcon, Server, Brain, Mail, Save, Search, Webhook, Key } from "lucide-react";
 import { useQueryClient } from "@tanstack/react-query";
 import { useToast } from "@/hooks/use-toast";
 
@@ -42,8 +43,60 @@ export default function Settings() {
       </header>
 
       <div className="space-y-8">
+        <DashboardApiKeyForm />
         <VpsConfigForm initialData={vpsConfig as VpsConfig | undefined} />
         <GlobalConfigForm initialData={settings as AppSettings | undefined} />
+      </div>
+    </div>
+  );
+}
+
+function DashboardApiKeyForm() {
+  const { toast } = useToast();
+  const [apiKey, setApiKey] = useState(() => localStorage.getItem("openclaw_api_key") ?? "");
+  const [saved, setSaved] = useState(false);
+
+  const handleSave = () => {
+    if (apiKey.trim()) {
+      localStorage.setItem("openclaw_api_key", apiKey.trim());
+    } else {
+      localStorage.removeItem("openclaw_api_key");
+    }
+    setSaved(true);
+    toast({ title: "API Key Updated", description: "Your dashboard API key has been saved locally." });
+    setTimeout(() => setSaved(false), 2000);
+  };
+
+  return (
+    <div className="glass-panel rounded-2xl overflow-hidden">
+      <div className="p-5 border-b border-white/10 bg-white/5 flex items-center gap-3">
+        <Key className="w-5 h-5 text-yellow-400" />
+        <h2 className="text-xl font-bold text-white">Dashboard API Key</h2>
+      </div>
+      <div className="p-6 space-y-4">
+        <p className="text-sm text-muted-foreground">
+          If <code className="bg-black/40 px-1 rounded text-xs">OPENCLAW_API_KEY</code> is set on the server, all API and terminal operations require this key. Enter it here so the dashboard can authenticate automatically. The key is stored only in your browser.
+        </p>
+        <div className="flex gap-3 items-center">
+          <input
+            type="password"
+            autoComplete="off"
+            value={apiKey}
+            onChange={(e) => setApiKey(e.target.value)}
+            onKeyDown={(e) => e.key === "Enter" && handleSave()}
+            className="flex-1 bg-black/40 border border-white/10 rounded-xl px-4 py-2.5 text-white focus:outline-none focus:ring-2 focus:ring-yellow-400/60 transition-all font-mono"
+            placeholder="sk-..."
+          />
+          <button
+            onClick={handleSave}
+            className="bg-yellow-400/20 hover:bg-yellow-400/30 text-yellow-400 border border-yellow-400/30 px-5 py-2.5 rounded-xl font-semibold flex items-center gap-2 transition-all"
+          >
+            <Save className="w-4 h-4" /> {saved ? "Saved!" : "Save"}
+          </button>
+        </div>
+        {!apiKey && (
+          <p className="text-xs text-muted-foreground/60">No key set — all API calls are sent without authentication (only safe in dev mode).</p>
+        )}
       </div>
     </div>
   );

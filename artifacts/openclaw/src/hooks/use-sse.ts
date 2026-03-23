@@ -1,4 +1,5 @@
 import { useState, useCallback, useRef } from "react";
+import { getApiKey } from "@/lib/api";
 
 export interface SSEMessage {
   type: string;
@@ -30,9 +31,13 @@ export function useSSEChat() {
     abortControllerRef.current = new AbortController();
 
     try {
+      const apiKey = getApiKey();
+      const headers: Record<string, string> = { "Content-Type": "application/json" };
+      if (apiKey) headers["X-API-Key"] = apiKey;
+
       const response = await fetch(`/api/agents/${agentId}/chat`, {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers,
         body: JSON.stringify({ content, conversationId }),
         signal: abortControllerRef.current.signal,
       });

@@ -15,7 +15,7 @@ import { requireApiKey } from "../middlewares/requireApiKey";
 
 const router: IRouter = Router();
 
-router.get("/agents", async (req, res): Promise<void> => {
+router.get("/agents", requireApiKey, async (req, res): Promise<void> => {
   const agents = await db.select().from(agentsTable).orderBy(desc(agentsTable.createdAt));
   res.json(agents);
 });
@@ -33,7 +33,7 @@ router.post("/agents", requireApiKey, async (req, res): Promise<void> => {
   res.status(201).json(agent);
 });
 
-router.get("/agents/stream", async (req, res): Promise<void> => {
+router.get("/agents/stream", requireApiKey, async (req, res): Promise<void> => {
   res.setHeader("Content-Type", "text/event-stream");
   res.setHeader("Cache-Control", "no-cache");
   res.setHeader("Connection", "keep-alive");
@@ -49,7 +49,7 @@ router.get("/agents/stream", async (req, res): Promise<void> => {
   req.on("close", () => agentStatusEmitter.off("status", onStatus));
 });
 
-router.get("/agents/:id", async (req, res): Promise<void> => {
+router.get("/agents/:id", requireApiKey, async (req, res): Promise<void> => {
   const id = parseInt(Array.isArray(req.params.id) ? req.params.id[0]! : req.params.id, 10);
   const [agent] = await db.select().from(agentsTable).where(eq(agentsTable.id, id));
   if (!agent) { res.status(404).json({ error: "Agent not found" }); return; }
@@ -86,7 +86,7 @@ router.patch("/agents/:id/status", requireApiKey, async (req, res): Promise<void
 });
 
 // Agent conversations
-router.get("/agents/:id/conversations", async (req, res): Promise<void> => {
+router.get("/agents/:id/conversations", requireApiKey, async (req, res): Promise<void> => {
   const id = parseInt(Array.isArray(req.params.id) ? req.params.id[0]! : req.params.id, 10);
   const convs = await db
     .select()
@@ -96,7 +96,7 @@ router.get("/agents/:id/conversations", async (req, res): Promise<void> => {
   res.json(convs);
 });
 
-router.get("/conversations/:id", async (req, res): Promise<void> => {
+router.get("/conversations/:id", requireApiKey, async (req, res): Promise<void> => {
   const id = parseInt(Array.isArray(req.params.id) ? req.params.id[0]! : req.params.id, 10);
   const [conv] = await db.select().from(agentConversationsTable).where(eq(agentConversationsTable.id, id));
   if (!conv) { res.status(404).json({ error: "Conversation not found" }); return; }
@@ -128,7 +128,7 @@ router.post("/agents/:id/chat", requireApiKey, async (req, res): Promise<void> =
 });
 
 // Agent-to-agent messages (both sent and received for full collaboration traceability)
-router.get("/agents/:id/messages", async (req, res): Promise<void> => {
+router.get("/agents/:id/messages", requireApiKey, async (req, res): Promise<void> => {
   const id = parseInt(Array.isArray(req.params.id) ? req.params.id[0]! : req.params.id, 10);
   const msgs = await db
     .select()
@@ -175,7 +175,7 @@ router.post("/agents/:id/messages", requireApiKey, async (req, res): Promise<voi
 });
 
 // Network edges — real agent message pairs for graph visualization
-router.get("/network/edges", async (req, res): Promise<void> => {
+router.get("/network/edges", requireApiKey, async (req, res): Promise<void> => {
   const msgs = await db
     .select()
     .from(agentMessagesTable)
@@ -196,7 +196,7 @@ router.get("/network/edges", async (req, res): Promise<void> => {
   res.json(Array.from(edgeMap.values()));
 });
 
-router.get("/agents/:id/files", async (req, res): Promise<void> => {
+router.get("/agents/:id/files", requireApiKey, async (req, res): Promise<void> => {
   const agentId = parseInt(req.params.id, 10);
   if (isNaN(agentId)) { res.status(400).json({ error: "Invalid agent id" }); return; }
   const files = await db

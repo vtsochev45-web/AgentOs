@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState, useCallback } from "react";
+import { apiFetch, getApiKey } from "@/lib/api";
 import { useGetVpsStats, getGetVpsStatsQueryKey, useListVpsProcesses, getListVpsProcessesQueryKey, useListVpsServices, getListVpsServicesQueryKey, useControlVpsService } from "@workspace/api-client-react";
 import { Terminal } from "@xterm/xterm";
 import { FitAddon } from "@xterm/addon-fit";
@@ -124,7 +125,7 @@ function StatsView() {
 
   const killMutation = useMutation({
     mutationFn: async (pid: number) => {
-      const res = await fetch(`/api/vps/processes/${pid}/kill`, { method: "POST" });
+      const res = await apiFetch(`/api/vps/processes/${pid}/kill`, { method: "POST" });
       if (!res.ok) throw new Error("Kill failed");
       return res.json();
     },
@@ -272,7 +273,7 @@ function FilesView() {
   const { data: entries, isLoading, error, refetch } = useQuery<FileEntry[]>({
     queryKey: ["/api/vps/files", currentPath],
     queryFn: async () => {
-      const res = await fetch(`/api/vps/files?path=${encodeURIComponent(currentPath)}`);
+      const res = await apiFetch(`/api/vps/files?path=${encodeURIComponent(currentPath)}`);
       if (!res.ok) throw new Error("Failed to list files");
       return res.json() as Promise<FileEntry[]>;
     },
@@ -280,7 +281,7 @@ function FilesView() {
 
   const readFile = useMutation({
     mutationFn: async (path: string) => {
-      const res = await fetch(`/api/vps/files/read?path=${encodeURIComponent(path)}`);
+      const res = await apiFetch(`/api/vps/files/read?path=${encodeURIComponent(path)}`);
       if (!res.ok) throw new Error("Cannot read file");
       return res.json() as Promise<{ content: string; path: string }>;
     },
@@ -292,9 +293,8 @@ function FilesView() {
 
   const writeFile = useMutation({
     mutationFn: async ({ path, content }: { path: string; content: string }) => {
-      const res = await fetch("/api/vps/files/write", {
+      const res = await apiFetch("/api/vps/files/write", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ path, content }),
       });
       if (!res.ok) throw new Error("Write failed");
@@ -305,7 +305,7 @@ function FilesView() {
 
   const deleteFile = useMutation({
     mutationFn: async (path: string) => {
-      const res = await fetch(`/api/vps/files/delete?path=${encodeURIComponent(path)}`, { method: "DELETE" });
+      const res = await apiFetch(`/api/vps/files/delete?path=${encodeURIComponent(path)}`, { method: "DELETE" });
       if (!res.ok) throw new Error("Delete failed");
       return res.json();
     },
@@ -316,9 +316,8 @@ function FilesView() {
     mutationFn: async (file: File) => {
       const content = await file.text();
       const filePath = currentPath.endsWith("/") ? `${currentPath}${file.name}` : `${currentPath}/${file.name}`;
-      const res = await fetch("/api/vps/files/upload", {
+      const res = await apiFetch("/api/vps/files/upload", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ path: filePath, content }),
       });
       if (!res.ok) throw new Error("Upload failed");

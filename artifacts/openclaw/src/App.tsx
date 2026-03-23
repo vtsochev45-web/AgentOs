@@ -2,6 +2,7 @@ import { Switch, Route, Router as WouterRouter } from "wouter";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { Toaster } from "@/components/ui/toaster";
 import { TooltipProvider } from "@/components/ui/tooltip";
+import { setApiKeyGetter } from "@workspace/api-client-react";
 
 import { Shell } from "@/components/layout/Shell";
 import Home from "@/pages/Home";
@@ -12,6 +13,8 @@ import Network from "@/pages/Network";
 import Activity from "@/pages/Activity";
 import Settings from "@/pages/Settings";
 import NotFound from "@/pages/not-found";
+
+setApiKeyGetter(() => localStorage.getItem("openclaw_api_key"));
 
 const queryClient = new QueryClient({
   defaultOptions: {

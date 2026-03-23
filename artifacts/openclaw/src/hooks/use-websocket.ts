@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState, useCallback } from "react";
+import { getApiKey } from "@/lib/api";
 
 export function useWebSocketTerminal(path: string) {
   const wsRef = useRef<WebSocket | null>(null);
@@ -11,8 +12,10 @@ export function useWebSocketTerminal(path: string) {
 
     // Use absolute URL for WS to handle proxies nicely
     const protocol = window.location.protocol === "https:" ? "wss:" : "ws:";
-    const wsUrl = `${protocol}//${window.location.host}${path}`;
-    
+    const apiKey = getApiKey();
+    const keyParam = apiKey ? `?api_key=${encodeURIComponent(apiKey)}` : "";
+    const wsUrl = `${protocol}//${window.location.host}${path}${keyParam}`;
+
     const ws = new WebSocket(wsUrl);
     wsRef.current = ws;
 
