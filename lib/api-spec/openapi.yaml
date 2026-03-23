@@ -3,20 +3,34 @@ info:
   # Do not change the title, if the title changes, the import paths will be broken
   title: Api
   version: 0.1.0
-  description: API specification
+  description: Openclaw Agent OS API
 servers:
   - url: /api
     description: Base API path
 tags:
   - name: health
     description: Health operations
+  - name: agents
+    description: AI Agent management
+  - name: conversations
+    description: Agent conversation operations
+  - name: agentMessages
+    description: Agent-to-agent messaging
+  - name: activityLog
+    description: Activity feed
+  - name: vps
+    description: VPS management
+  - name: settings
+    description: Global settings
+  - name: openai
+    description: OpenAI AI chat, image, and audio operations
+
 paths:
   /healthz:
     get:
       operationId: healthCheck
       tags: [health]
       summary: Health check
-      description: Returns server health status
       responses:
         "200":
           description: Healthy
@@ -24,6 +38,738 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/HealthStatus"
+
+  # ── Agents ──────────────────────────────────────────────────────────────────
+  /agents:
+    get:
+      operationId: listAgents
+      tags: [agents]
+      summary: List all agents
+      responses:
+        "200":
+          description: List of agents
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/Agent"
+    post:
+      operationId: createAgent
+      tags: [agents]
+      summary: Create a new agent
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateAgentBody"
+      responses:
+        "201":
+          description: Created agent
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Agent"
+
+  /agents/{id}:
+    get:
+      operationId: getAgent
+      tags: [agents]
+      summary: Get an agent by ID
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: Agent
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Agent"
+        "404":
+          description: Not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
+    patch:
+      operationId: updateAgent
+      tags: [agents]
+      summary: Update an agent
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UpdateAgentBody"
+      responses:
+        "200":
+          description: Updated agent
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Agent"
+        "404":
+          description: Not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
+    delete:
+      operationId: deleteAgent
+      tags: [agents]
+      summary: Delete an agent
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "204":
+          description: Deleted
+        "404":
+          description: Not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
+
+  /agents/{id}/status:
+    patch:
+      operationId: updateAgentStatus
+      tags: [agents]
+      summary: Update agent status
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UpdateAgentStatusBody"
+      responses:
+        "200":
+          description: Updated agent
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Agent"
+
+  # ── Agent Conversations ──────────────────────────────────────────────────────
+  /agents/{id}/conversations:
+    get:
+      operationId: listAgentConversations
+      tags: [conversations]
+      summary: List conversations for an agent
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: List of conversations
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/Conversation"
+
+  /conversations/{id}:
+    get:
+      operationId: getConversation
+      tags: [conversations]
+      summary: Get a conversation with its messages
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: Conversation with messages
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ConversationWithMessages"
+        "404":
+          description: Not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
+    delete:
+      operationId: deleteConversation
+      tags: [conversations]
+      summary: Delete a conversation
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "204":
+          description: Deleted
+        "404":
+          description: Not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
+
+  /agents/{id}/chat:
+    post:
+      operationId: agentChat
+      tags: [conversations]
+      summary: Send a message to an agent and receive a Perplexity-style streaming response
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/AgentChatBody"
+      responses:
+        "200":
+          description: SSE stream of reasoning steps, sources, answer chunks, and follow-ups
+          content:
+            text/event-stream: {}
+        "404":
+          description: Agent not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
+
+  # ── Agent-to-Agent Messages ──────────────────────────────────────────────────
+  /agents/{id}/messages:
+    get:
+      operationId: listAgentMessages
+      tags: [agentMessages]
+      summary: List messages sent to/from an agent
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: List of agent messages
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/AgentMessage"
+    post:
+      operationId: sendAgentMessage
+      tags: [agentMessages]
+      summary: Send a message from one agent to another
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/SendAgentMessageBody"
+      responses:
+        "201":
+          description: Message sent and delegation triggered
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AgentMessage"
+
+  # ── Activity Log ─────────────────────────────────────────────────────────────
+  /activity:
+    get:
+      operationId: listActivity
+      tags: [activityLog]
+      summary: List recent activity across all agents
+      parameters:
+        - name: limit
+          in: query
+          schema:
+            type: integer
+        - name: agentId
+          in: query
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: Activity entries
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/ActivityEntry"
+
+  /activity/stream:
+    get:
+      operationId: streamActivity
+      tags: [activityLog]
+      summary: SSE stream of real-time activity events
+      responses:
+        "200":
+          description: SSE stream of activity events
+          content:
+            text/event-stream: {}
+
+  # ── VPS ──────────────────────────────────────────────────────────────────────
+  /vps/config:
+    get:
+      operationId: getVpsConfig
+      tags: [vps]
+      summary: Get VPS connection configuration
+      responses:
+        "200":
+          description: VPS config (credentials redacted)
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/VpsConfig"
+        "404":
+          description: Not configured
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
+    put:
+      operationId: saveVpsConfig
+      tags: [vps]
+      summary: Save VPS SSH connection config
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/SaveVpsConfigBody"
+      responses:
+        "200":
+          description: Saved config
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/VpsConfig"
+
+  /vps/test:
+    post:
+      operationId: testVpsConnection
+      tags: [vps]
+      summary: Test VPS SSH connection
+      responses:
+        "200":
+          description: Connection result
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/VpsTestResult"
+
+  /vps/stats:
+    get:
+      operationId: getVpsStats
+      tags: [vps]
+      summary: Get live system stats (CPU, RAM, disk, uptime)
+      responses:
+        "200":
+          description: System stats
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/VpsStats"
+
+  /vps/processes:
+    get:
+      operationId: listVpsProcesses
+      tags: [vps]
+      summary: List running processes
+      responses:
+        "200":
+          description: Process list
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/VpsProcess"
+
+  /vps/processes/{pid}/kill:
+    post:
+      operationId: killVpsProcess
+      tags: [vps]
+      summary: Kill a process by PID
+      parameters:
+        - name: pid
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: Result
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/VpsCommandResult"
+
+  /vps/services:
+    get:
+      operationId: listVpsServices
+      tags: [vps]
+      summary: List systemd/pm2 services
+      responses:
+        "200":
+          description: Service list
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/VpsService"
+
+  /vps/services/{name}/{action}:
+    post:
+      operationId: controlVpsService
+      tags: [vps]
+      summary: Start, stop, or restart a service
+      parameters:
+        - name: name
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: action
+          in: path
+          required: true
+          schema:
+            type: string
+            enum: [start, stop, restart, status]
+      responses:
+        "200":
+          description: Result
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/VpsCommandResult"
+
+  /vps/files:
+    get:
+      operationId: listVpsFiles
+      tags: [vps]
+      summary: List files in a VPS directory
+      parameters:
+        - name: path
+          in: query
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: File list
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/VpsFileEntry"
+
+  /vps/files/read:
+    get:
+      operationId: readVpsFile
+      tags: [vps]
+      summary: Read a file from the VPS
+      parameters:
+        - name: path
+          in: query
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: File content
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/VpsFileContent"
+
+  /vps/files/write:
+    post:
+      operationId: writeVpsFile
+      tags: [vps]
+      summary: Write a file to the VPS
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/WriteVpsFileBody"
+      responses:
+        "200":
+          description: Write result
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/VpsCommandResult"
+
+  /vps/files/delete:
+    delete:
+      operationId: deleteVpsFile
+      tags: [vps]
+      summary: Delete a file or directory from the VPS
+      parameters:
+        - name: path
+          in: query
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Delete result
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/VpsCommandResult"
+
+  /vps/exec:
+    post:
+      operationId: execVpsCommand
+      tags: [vps]
+      summary: Execute a shell command on the VPS
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ExecVpsCommandBody"
+      responses:
+        "200":
+          description: Command output
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/VpsCommandResult"
+
+  /vps/logs:
+    get:
+      operationId: tailVpsLog
+      tags: [vps]
+      summary: Tail a log file on the VPS (SSE stream)
+      parameters:
+        - name: path
+          in: query
+          required: true
+          schema:
+            type: string
+        - name: lines
+          in: query
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: SSE stream of log lines
+          content:
+            text/event-stream: {}
+
+  # ── Settings ─────────────────────────────────────────────────────────────────
+  /settings:
+    get:
+      operationId: getSettings
+      tags: [settings]
+      summary: Get application settings
+      responses:
+        "200":
+          description: Settings (secrets redacted)
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AppSettings"
+    put:
+      operationId: saveSettings
+      tags: [settings]
+      summary: Save application settings
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/SaveSettingsBody"
+      responses:
+        "200":
+          description: Saved settings
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AppSettings"
+
+  # ── OpenAI (from template) ───────────────────────────────────────────────────
+  /openai/conversations:
+    get:
+      operationId: listOpenaiConversations
+      tags: [openai]
+      summary: List all conversations
+      responses:
+        "200":
+          description: List of conversations
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/OpenaiConversation"
+    post:
+      operationId: createOpenaiConversation
+      tags: [openai]
+      summary: Create a new conversation
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateOpenaiConversationBody"
+      responses:
+        "201":
+          description: Created conversation
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/OpenaiConversation"
+
+  /openai/conversations/{id}:
+    get:
+      operationId: getOpenaiConversation
+      tags: [openai]
+      summary: Get conversation with messages
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: Conversation with messages
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/OpenaiConversationWithMessages"
+        "404":
+          description: Not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/OpenaiError"
+    delete:
+      operationId: deleteOpenaiConversation
+      tags: [openai]
+      summary: Delete a conversation
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "204":
+          description: Deleted
+        "404":
+          description: Not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/OpenaiError"
+
+  /openai/conversations/{id}/messages:
+    get:
+      operationId: listOpenaiMessages
+      tags: [openai]
+      summary: List messages in a conversation
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: List of messages
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/OpenaiMessage"
+    post:
+      operationId: sendOpenaiMessage
+      tags: [openai]
+      summary: Send a text message and receive a streaming text response
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/SendOpenaiMessageBody"
+      responses:
+        "200":
+          description: SSE stream of assistant text chunks
+          content:
+            text/event-stream: {}
+
+  /openai/generate-image:
+    post:
+      operationId: generateOpenaiImage
+      tags: [openai]
+      summary: Generate an image from a text prompt
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/GenerateOpenaiImageBody"
+      responses:
+        "200":
+          description: Generated image data
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/GenerateOpenaiImageResponse"
+
 components:
   schemas:
     HealthStatus:
@@ -34,3 +780,605 @@ components:
       required:
         - status
 
+    ApiError:
+      type: object
+      properties:
+        error:
+          type: string
+      required:
+        - error
+
+    # ── Agent schemas ──────────────────────────────────────────────────────────
+    Agent:
+      type: object
+      properties:
+        id:
+          type: integer
+        name:
+          type: string
+        persona:
+          type: string
+        toolsEnabled:
+          type: array
+          items:
+            type: string
+        status:
+          type: string
+          enum: [idle, thinking, searching, writing, delegating, executing]
+        lastActiveAt:
+          type: string
+          format: date-time
+          nullable: true
+        createdAt:
+          type: string
+          format: date-time
+      required:
+        - id
+        - name
+        - persona
+        - toolsEnabled
+        - status
+        - createdAt
+
+    CreateAgentBody:
+      type: object
+      properties:
+        name:
+          type: string
+        persona:
+          type: string
+        toolsEnabled:
+          type: array
+          items:
+            type: string
+      required:
+        - name
+        - persona
+
+    UpdateAgentBody:
+      type: object
+      properties:
+        name:
+          type: string
+        persona:
+          type: string
+        toolsEnabled:
+          type: array
+          items:
+            type: string
+
+    UpdateAgentStatusBody:
+      type: object
+      properties:
+        status:
+          type: string
+          enum: [idle, thinking, searching, writing, delegating, executing]
+      required:
+        - status
+
+    # ── Conversation schemas ───────────────────────────────────────────────────
+    Conversation:
+      type: object
+      properties:
+        id:
+          type: integer
+        agentId:
+          type: integer
+        title:
+          type: string
+        createdAt:
+          type: string
+          format: date-time
+      required:
+        - id
+        - agentId
+        - title
+        - createdAt
+
+    ConversationMessage:
+      type: object
+      properties:
+        id:
+          type: integer
+        conversationId:
+          type: integer
+        role:
+          type: string
+          enum: [user, assistant, tool]
+        content:
+          type: string
+        sourcesJson:
+          nullable: true
+          type: array
+          items:
+            $ref: "#/components/schemas/SearchSource"
+        timestamp:
+          type: string
+          format: date-time
+      required:
+        - id
+        - conversationId
+        - role
+        - content
+        - timestamp
+
+    ConversationWithMessages:
+      type: object
+      properties:
+        id:
+          type: integer
+        agentId:
+          type: integer
+        title:
+          type: string
+        createdAt:
+          type: string
+          format: date-time
+        messages:
+          type: array
+          items:
+            $ref: "#/components/schemas/ConversationMessage"
+      required:
+        - id
+        - agentId
+        - title
+        - createdAt
+        - messages
+
+    SearchSource:
+      type: object
+      properties:
+        title:
+          type: string
+        url:
+          type: string
+        snippet:
+          type: string
+        favicon:
+          type: string
+          nullable: true
+      required:
+        - title
+        - url
+        - snippet
+
+    AgentChatBody:
+      type: object
+      properties:
+        content:
+          type: string
+        conversationId:
+          type: integer
+          nullable: true
+      required:
+        - content
+
+    # ── Agent message schemas ──────────────────────────────────────────────────
+    AgentMessage:
+      type: object
+      properties:
+        id:
+          type: integer
+        fromAgentId:
+          type: integer
+        toAgentId:
+          type: integer
+        threadId:
+          type: string
+          nullable: true
+        content:
+          type: string
+        response:
+          type: string
+          nullable: true
+        timestamp:
+          type: string
+          format: date-time
+      required:
+        - id
+        - fromAgentId
+        - toAgentId
+        - content
+        - timestamp
+
+    SendAgentMessageBody:
+      type: object
+      properties:
+        toAgentId:
+          type: integer
+        content:
+          type: string
+        threadId:
+          type: string
+          nullable: true
+      required:
+        - toAgentId
+        - content
+
+    # ── Activity log schemas ───────────────────────────────────────────────────
+    ActivityEntry:
+      type: object
+      properties:
+        id:
+          type: integer
+        agentId:
+          type: integer
+          nullable: true
+        agentName:
+          type: string
+          nullable: true
+        actionType:
+          type: string
+        detail:
+          type: string
+        timestamp:
+          type: string
+          format: date-time
+      required:
+        - id
+        - actionType
+        - detail
+        - timestamp
+
+    # ── VPS schemas ────────────────────────────────────────────────────────────
+    VpsConfig:
+      type: object
+      properties:
+        id:
+          type: integer
+        label:
+          type: string
+        host:
+          type: string
+        port:
+          type: integer
+        username:
+          type: string
+        authType:
+          type: string
+          enum: [password, key]
+        hasCredentials:
+          type: boolean
+        createdAt:
+          type: string
+          format: date-time
+      required:
+        - id
+        - label
+        - host
+        - port
+        - username
+        - authType
+        - hasCredentials
+        - createdAt
+
+    SaveVpsConfigBody:
+      type: object
+      properties:
+        label:
+          type: string
+        host:
+          type: string
+        port:
+          type: integer
+        username:
+          type: string
+        authType:
+          type: string
+          enum: [password, key]
+        password:
+          type: string
+          nullable: true
+        privateKey:
+          type: string
+          nullable: true
+      required:
+        - label
+        - host
+        - port
+        - username
+        - authType
+
+    VpsTestResult:
+      type: object
+      properties:
+        success:
+          type: boolean
+        message:
+          type: string
+      required:
+        - success
+        - message
+
+    VpsStats:
+      type: object
+      properties:
+        cpuPercent:
+          type: number
+        memUsedMb:
+          type: number
+        memTotalMb:
+          type: number
+        diskUsedGb:
+          type: number
+        diskTotalGb:
+          type: number
+        uptime:
+          type: string
+        loadAvg:
+          type: string
+      required:
+        - cpuPercent
+        - memUsedMb
+        - memTotalMb
+        - diskUsedGb
+        - diskTotalGb
+        - uptime
+        - loadAvg
+
+    VpsProcess:
+      type: object
+      properties:
+        pid:
+          type: integer
+        user:
+          type: string
+        cpu:
+          type: string
+        mem:
+          type: string
+        command:
+          type: string
+      required:
+        - pid
+        - user
+        - cpu
+        - mem
+        - command
+
+    VpsService:
+      type: object
+      properties:
+        name:
+          type: string
+        status:
+          type: string
+        type:
+          type: string
+          enum: [systemd, pm2, unknown]
+      required:
+        - name
+        - status
+        - type
+
+    VpsFileEntry:
+      type: object
+      properties:
+        name:
+          type: string
+        path:
+          type: string
+        type:
+          type: string
+          enum: [file, directory, symlink]
+        size:
+          type: integer
+        modifiedAt:
+          type: string
+      required:
+        - name
+        - path
+        - type
+        - size
+        - modifiedAt
+
+    VpsFileContent:
+      type: object
+      properties:
+        path:
+          type: string
+        content:
+          type: string
+        encoding:
+          type: string
+      required:
+        - path
+        - content
+        - encoding
+
+    WriteVpsFileBody:
+      type: object
+      properties:
+        path:
+          type: string
+        content:
+          type: string
+      required:
+        - path
+        - content
+
+    ExecVpsCommandBody:
+      type: object
+      properties:
+        command:
+          type: string
+        timeout:
+          type: integer
+          nullable: true
+      required:
+        - command
+
+    VpsCommandResult:
+      type: object
+      properties:
+        success:
+          type: boolean
+        stdout:
+          type: string
+        stderr:
+          type: string
+        exitCode:
+          type: integer
+          nullable: true
+      required:
+        - success
+        - stdout
+        - stderr
+
+    # ── Settings schemas ───────────────────────────────────────────────────────
+    AppSettings:
+      type: object
+      properties:
+        aiModel:
+          type: string
+        smtpHost:
+          type: string
+          nullable: true
+        smtpPort:
+          type: integer
+          nullable: true
+        smtpUser:
+          type: string
+          nullable: true
+        smtpConfigured:
+          type: boolean
+        webhookUrl:
+          type: string
+          nullable: true
+        searchProvider:
+          type: string
+          enum: [duckduckgo, brave]
+        braveApiKeyConfigured:
+          type: boolean
+      required:
+        - aiModel
+        - smtpConfigured
+        - searchProvider
+        - braveApiKeyConfigured
+
+    SaveSettingsBody:
+      type: object
+      properties:
+        aiModel:
+          type: string
+        smtpHost:
+          type: string
+          nullable: true
+        smtpPort:
+          type: integer
+          nullable: true
+        smtpUser:
+          type: string
+          nullable: true
+        smtpPassword:
+          type: string
+          nullable: true
+        webhookUrl:
+          type: string
+          nullable: true
+        searchProvider:
+          type: string
+          enum: [duckduckgo, brave]
+        braveApiKey:
+          type: string
+          nullable: true
+
+    # ── OpenAI integration schemas ─────────────────────────────────────────────
+    OpenaiConversation:
+      type: object
+      properties:
+        id:
+          type: integer
+        title:
+          type: string
+        createdAt:
+          type: string
+          format: date-time
+      required:
+        - id
+        - title
+        - createdAt
+
+    OpenaiMessage:
+      type: object
+      properties:
+        id:
+          type: integer
+        conversationId:
+          type: integer
+        role:
+          type: string
+        content:
+          type: string
+        createdAt:
+          type: string
+          format: date-time
+      required:
+        - id
+        - conversationId
+        - role
+        - content
+        - createdAt
+
+    CreateOpenaiConversationBody:
+      type: object
+      properties:
+        title:
+          type: string
+      required:
+        - title
+
+    SendOpenaiMessageBody:
+      type: object
+      properties:
+        content:
+          type: string
+      required:
+        - content
+
+    OpenaiConversationWithMessages:
+      type: object
+      properties:
+        id:
+          type: integer
+        title:
+          type: string
+        createdAt:
+          type: string
+          format: date-time
+        messages:
+          type: array
+          items:
+            $ref: "#/components/schemas/OpenaiMessage"
+      required:
+        - id
+        - title
+        - createdAt
+        - messages
+
+    GenerateOpenaiImageBody:
+      type: object
+      properties:
+        prompt:
+          type: string
+        size:
+          type: string
+          enum: ["1024x1024", "512x512", "256x256"]
+      required:
+        - prompt
+
+    GenerateOpenaiImageResponse:
+      type: object
+      properties:
+        b64_json:
+          type: string
+      required:
+        - b64_json
+
+    OpenaiError:
+      type: object
+      properties:
+        error:
+          type: string
+      required:
+        - error

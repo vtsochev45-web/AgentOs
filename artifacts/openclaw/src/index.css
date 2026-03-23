@@ -1,0 +1,144 @@
+@import url('https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;700&family=Space+Grotesk:wght@300;400;500;600;700&display=swap');
+@import "tailwindcss";
+@import "tw-animate-css";
+@plugin "@tailwindcss/typography";
+
+@custom-variant dark (&:is(.dark *));
+
+@theme inline {
+  --color-background: hsl(var(--background));
+  --color-foreground: hsl(var(--foreground));
+  --color-border: hsl(var(--border));
+  --color-input: hsl(var(--input));
+  --color-ring: hsl(var(--ring));
+
+  --color-card: hsl(var(--card));
+  --color-card-foreground: hsl(var(--card-foreground));
+  --color-card-border: hsl(var(--card-border));
+
+  --color-popover: hsl(var(--popover));
+  --color-popover-foreground: hsl(var(--popover-foreground));
+  --color-popover-border: hsl(var(--popover-border));
+
+  --color-primary: hsl(var(--primary));
+  --color-primary-foreground: hsl(var(--primary-foreground));
+  
+  --color-secondary: hsl(var(--secondary));
+  --color-secondary-foreground: hsl(var(--secondary-foreground));
+  
+  --color-muted: hsl(var(--muted));
+  --color-muted-foreground: hsl(var(--muted-foreground));
+  
+  --color-accent: hsl(var(--accent));
+  --color-accent-foreground: hsl(var(--accent-foreground));
+  
+  --color-destructive: hsl(var(--destructive));
+  --color-destructive-foreground: hsl(var(--destructive-foreground));
+
+  --color-status-idle: hsl(var(--status-idle));
+  --color-status-thinking: hsl(var(--status-thinking));
+  --color-status-searching: hsl(var(--status-searching));
+  --color-status-writing: hsl(var(--status-writing));
+  --color-status-delegating: hsl(var(--status-delegating));
+  --color-status-executing: hsl(var(--status-executing));
+
+  --font-sans: 'Space Grotesk', sans-serif;
+  --font-mono: 'JetBrains Mono', monospace;
+  
+  --radius-lg: var(--radius);
+  --radius-md: calc(var(--radius) - 2px);
+  --radius-sm: calc(var(--radius) - 4px);
+}
+
+/* Force Dark Mode for Command Center Aesthetic */
+:root {
+  --background: 224 40% 6%;
+  --foreground: 210 40% 98%;
+
+  --card: 222 47% 11%;
+  --card-foreground: 210 40% 98%;
+  --card-border: 216 34% 17%;
+
+  --popover: 222 47% 11%;
+  --popover-foreground: 210 40% 98%;
+  --popover-border: 216 34% 17%;
+
+  --primary: 189 100% 50%; /* Electric Cyan */
+  --primary-foreground: 224 40% 6%;
+
+  --secondary: 217 32% 17%;
+  --secondary-foreground: 210 40% 98%;
+
+  --muted: 217 32% 17%;
+  --muted-foreground: 215 20.2% 65.1%;
+
+  --accent: 262 83% 58%; /* Purple */
+  --accent-foreground: 210 40% 98%;
+
+  --destructive: 0 84% 60%;
+  --destructive-foreground: 210 40% 98%;
+
+  --border: 216 34% 17%;
+  --input: 216 34% 17%;
+  --ring: 189 100% 50%;
+
+  /* Status Colors */
+  --status-idle: 215 20% 65%;
+  --status-thinking: 217 91% 60%;
+  --status-searching: 48 96% 53%;
+  --status-writing: 142 71% 45%;
+  --status-delegating: 262 83% 58%;
+  --status-executing: 0 84% 60%;
+
+  --radius: 0.75rem;
+}
+
+@layer base {
+  * {
+    @apply border-border;
+  }
+  body {
+    @apply bg-background text-foreground font-sans antialiased overflow-x-hidden;
+    background-image: radial-gradient(circle at 50% 0%, rgba(6, 182, 212, 0.08) 0%, transparent 50%),
+                      radial-gradient(circle at 100% 100%, rgba(139, 92, 246, 0.05) 0%, transparent 50%);
+    background-attachment: fixed;
+  }
+}
+
+@layer utilities {
+  .glass-panel {
+    @apply bg-card/60 backdrop-blur-xl border border-white/10 shadow-xl shadow-black/50;
+  }
+  
+  .glass-button {
+    @apply bg-white/5 hover:bg-white/10 border border-white/10 backdrop-blur-sm transition-all duration-200;
+  }
+
+  .text-glow {
+    text-shadow: 0 0 10px currentColor;
+  }
+
+  .animate-pulse-fast {
+    animation: pulse-fast 1.5s cubic-bezier(0.4, 0, 0.6, 1) infinite;
+  }
+
+  @keyframes pulse-fast {
+    0%, 100% { opacity: 1; transform: scale(1); }
+    50% { opacity: .7; transform: scale(0.95); }
+  }
+
+  .status-glow-idle { box-shadow: 0 0 8px hsl(var(--status-idle) / 0.5); }
+  .status-glow-thinking { box-shadow: 0 0 12px hsl(var(--status-thinking) / 0.7); }
+  .status-glow-searching { box-shadow: 0 0 12px hsl(var(--status-searching) / 0.7); }
+  .status-glow-writing { box-shadow: 0 0 12px hsl(var(--status-writing) / 0.7); }
+  .status-glow-delegating { box-shadow: 0 0 12px hsl(var(--status-delegating) / 0.7); }
+  .status-glow-executing { box-shadow: 0 0 12px hsl(var(--status-executing) / 0.7); }
+}
+
+/* xterm.js overrides for dark theme */
+.xterm-viewport {
+  background-color: transparent !important;
+}
+.xterm .xterm-screen {
+  padding: 0.5rem;
+}

@@ -1,0 +1,19 @@
+packages:
+  "framer-motion": "For page transitions and smooth UI animations in the command center"
+  "xterm": "Required for the VPS web terminal emulator"
+  "@xterm/addon-fit": "To make the terminal responsive to container sizing"
+  "xterm/css/xterm.css": "Terminal styles"
+  "d3": "For the real-time agent network visualization graph"
+  "@types/d3": "TypeScript definitions for d3"
+  "react-markdown": "To render agent responses securely with formatting"
+  "remark-gfm": "For markdown tables and GitHub flavored features in agent chat"
+
+images:
+  - path: "artifacts/openclaw/public/images/bg-glow.png"
+    description: "Abstract subtle dark navy background with a faint electric cyan and purple glowing orb in the center, highly professional, dark mode command center aesthetic"
+    aspect_ratio: "16:9"
+
+notes:
+  - The app defaults to dark mode to match the command center aesthetic.
+  - SSE parsing is handled manually via fetch + ReadableStream for chat and activity streams, as generated react-query hooks don't support SSE well.
+  - Terminal connects to ws://HOST/api/vps/terminal assuming proxy handles the upgrade.
