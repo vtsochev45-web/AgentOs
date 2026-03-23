@@ -3,7 +3,7 @@ import { useGetVpsStats, getGetVpsStatsQueryKey, useListVpsProcesses, getListVps
 import { Terminal } from "@xterm/xterm";
 import { FitAddon } from "@xterm/addon-fit";
 import { useWebSocketTerminal } from "@/hooks/use-websocket";
-import { Server, Activity, Cpu, HardDrive, TerminalSquare, Play, Square, RotateCw, Clock, Folder, FileText, Skull, ChevronRight, RefreshCw } from "lucide-react";
+import { Server, Activity, Cpu, HardDrive, TerminalSquare, Play, Square, RotateCw, Clock, Folder, FileText, Skull, ChevronRight, RefreshCw, Upload, Download, Trash2 } from "lucide-react";
 import { useQueryClient, useQuery, useMutation } from "@tanstack/react-query";
 
 type Tab = 'terminal' | 'stats' | 'services' | 'files' | 'logs';
@@ -267,13 +267,14 @@ function FilesView() {
   const [currentPath, setCurrentPath] = useState("/");
   const [editingFile, setEditingFile] = useState<{ path: string; content: string } | null>(null);
   const [editContent, setEditContent] = useState("");
+  const uploadInputRef = useRef<HTMLInputElement>(null);
 
   const { data: entries, isLoading, error, refetch } = useQuery<FileEntry[]>({
     queryKey: ["/api/vps/files", currentPath],
     queryFn: async () => {
       const res = await fetch(`/api/vps/files?path=${encodeURIComponent(currentPath)}`);
       if (!res.ok) throw new Error("Failed to list files");
-      return res.json();
+      return res.json() as Promise<FileEntry[]>;
     },
   });
 
@@ -281,8 +282,7 @@ function FilesView() {
     mutationFn: async (path: string) => {
       const res = await fetch(`/api/vps/files/read?path=${encodeURIComponent(path)}`);
       if (!res.ok) throw new Error("Cannot read file");
-      const data = await res.json() as { content: string; path: string };
-      return data;
+      return res.json() as Promise<{ content: string; path: string }>;
     },
     onSuccess: (data) => {
       setEditingFile({ path: data.path, content: data.content });
@@ -302,6 +302,34 @@ function FilesView() {
     },
     onSuccess: () => { setEditingFile(null); refetch(); },
   });
+
+  const deleteFile = useMutation({
+    mutationFn: async (path: string) => {
+      const res = await fetch(`/api/vps/files/delete?path=${encodeURIComponent(path)}`, { method: "DELETE" });
+      if (!res.ok) throw new Error("Delete failed");
+      return res.json();
+    },
+    onSuccess: () => refetch(),
+  });
+
+  const uploadFile = useMutation({
+    mutationFn: async (file: File) => {
+      const content = await file.text();
+      const filePath = currentPath.endsWith("/") ? `${currentPath}${file.name}` : `${currentPath}/${file.name}`;
+      const res = await fetch("/api/vps/files/upload", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ path: filePath, content }),
+      });
+      if (!res.ok) throw new Error("Upload failed");
+      return res.json();
+    },
+    onSuccess: () => refetch(),
+  });
+
+  const downloadFile = (path: string) => {
+    window.open(`/api/vps/files/download?path=${encodeURIComponent(path)}`, "_blank");
+  };
 
   const pathParts = currentPath.split("/").filter(Boolean);
 
@@ -346,6 +374,16 @@ function FilesView() {
 
   return (
     <div className="flex flex-col h-full">
+      <input
+        ref={uploadInputRef}
+        type="file"
+        className="hidden"
+        onChange={e => {
+          const file = e.target.files?.[0];
+          if (file) uploadFile.mutate(file);
+          e.target.value = "";
+        }}
+      />
       <div className="flex items-center gap-1 px-4 py-3 border-b border-white/10 bg-white/5 shrink-0 overflow-x-auto custom-scrollbar">
         <button onClick={() => navigateTo("/")} className="text-primary hover:text-primary/80 font-mono text-sm shrink-0">/</button>
         {pathParts.map((part, i) => {
@@ -357,7 +395,16 @@ function FilesView() {
             </span>
           );
         })}
-        <div className="ml-auto">
+        <div className="ml-auto flex items-center gap-2">
+          <button
+            onClick={() => uploadInputRef.current?.click()}
+            disabled={uploadFile.isPending}
+            title="Upload file to current directory"
+            className="flex items-center gap-1.5 px-3 py-1 rounded-lg bg-primary/10 hover:bg-primary/20 text-primary text-xs font-medium transition-colors disabled:opacity-50"
+          >
+            <Upload className="w-3.5 h-3.5" />
+            {uploadFile.isPending ? "Uploading..." : "Upload"}
+          </button>
           <button onClick={() => refetch()} className="p-1 rounded hover:bg-white/10 text-muted-foreground hover:text-white transition-colors">
             <RefreshCw className="w-3.5 h-3.5" />
           </button>
@@ -415,12 +462,34 @@ function FilesView() {
                     </td>
                     <td className="px-4 py-2">
                       {entry.type === "file" && (
-                        <button
-                          onClick={() => readFile.mutate(entry.path)}
-                          className="px-2 py-1 text-[10px] font-mono bg-primary/10 hover:bg-primary/20 text-primary rounded opacity-0 group-hover:opacity-100 transition-all"
-                        >
-                          EDIT
-                        </button>
+                        <div className="flex items-center gap-1.5 opacity-0 group-hover:opacity-100 transition-all">
+                          <button
+                            onClick={() => readFile.mutate(entry.path)}
+                            title="Edit"
+                            className="px-2 py-1 text-[10px] font-mono bg-primary/10 hover:bg-primary/20 text-primary rounded transition-colors"
+                          >
+                            EDIT
+                          </button>
+                          <button
+                            onClick={() => downloadFile(entry.path)}
+                            title="Download"
+                            className="p-1.5 rounded bg-white/5 hover:bg-white/10 text-muted-foreground hover:text-white transition-colors"
+                          >
+                            <Download className="w-3 h-3" />
+                          </button>
+                          <button
+                            onClick={() => {
+                              if (window.confirm(`Delete ${entry.name}?`)) {
+                                deleteFile.mutate(entry.path);
+                              }
+                            }}
+                            disabled={deleteFile.isPending}
+                            title="Delete"
+                            className="p-1.5 rounded bg-red-500/10 hover:bg-red-500/20 text-red-400 transition-colors disabled:opacity-40"
+                          >
+                            <Trash2 className="w-3 h-3" />
+                          </button>
+                        </div>
                       )}
                     </td>
                   </tr>

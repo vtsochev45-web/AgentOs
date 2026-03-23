@@ -4,7 +4,7 @@ import { vpsConfigTable } from "@workspace/db";
 import { encrypt, decrypt } from "../lib/encryption";
 import { exec, execStreaming, sftpReadFileById, sftpWriteFileById, sftpListDirById, sftpUnlinkById, sftpReadFileBuffer, type SshCredentials } from "../lib/sshManager";
 import { eq } from "drizzle-orm";
-import { emitActivity } from "../lib/activityEmitter";
+import { persistAndEmitActivity } from "../lib/activityEmitter";
 
 const router: IRouter = Router();
 
@@ -215,7 +215,7 @@ router.post("/vps/services/:name/:action", async (req, res): Promise<void> => {
       `systemctl ${action} ${name}.service 2>&1 || pm2 ${action} ${name} 2>&1`,
       15000
     );
-    emitActivity({ actionType: "vps_service", detail: `${action} ${name}`, timestamp: new Date().toISOString() });
+    persistAndEmitActivity({ actionType: "vps_service", detail: `${action} ${name}`, timestamp: new Date().toISOString() });
     res.json({ success: exitCode === 0, stdout, stderr });
   } catch (err) {
     res.status(500).json({ error: err instanceof Error ? err.message : String(err) });
@@ -260,7 +260,7 @@ router.post("/vps/files/write", async (req, res): Promise<void> => {
 
   try {
     await sftpWriteFileById(creds.id, creds, path, content);
-    emitActivity({ actionType: "file_write", detail: `Wrote: ${path}`, timestamp: new Date().toISOString() });
+    persistAndEmitActivity({ actionType: "file_write", detail: `Wrote: ${path}`, timestamp: new Date().toISOString() });
     res.json({ success: true, stdout: `Written to ${path}`, stderr: "" });
   } catch (err) {
     res.json({ success: false, stdout: "", stderr: err instanceof Error ? err.message : String(err) });
@@ -276,7 +276,7 @@ router.delete("/vps/files/delete", async (req, res): Promise<void> => {
 
   try {
     await sftpUnlinkById(creds.id, creds, filePath);
-    emitActivity({ actionType: "file_delete", detail: `Deleted: ${filePath}`, timestamp: new Date().toISOString() });
+    persistAndEmitActivity({ actionType: "file_delete", detail: `Deleted: ${filePath}`, timestamp: new Date().toISOString() });
     res.json({ success: true, stdout: `Deleted ${filePath}`, stderr: "" });
   } catch (err) {
     res.json({ success: false, stdout: "", stderr: err instanceof Error ? err.message : String(err) });
@@ -292,7 +292,7 @@ router.post("/vps/files/upload", async (req, res): Promise<void> => {
 
   try {
     await sftpWriteFileById(creds.id, creds, filePath, content);
-    emitActivity({ actionType: "file_write", detail: `Uploaded: ${filePath}`, timestamp: new Date().toISOString() });
+    persistAndEmitActivity({ actionType: "file_write", detail: `Uploaded: ${filePath}`, timestamp: new Date().toISOString() });
     res.json({ success: true, stdout: `Uploaded to ${filePath}`, stderr: "" });
   } catch (err) {
     res.json({ success: false, stdout: "", stderr: err instanceof Error ? err.message : String(err) });
@@ -316,7 +316,7 @@ router.post("/vps/processes/restart", async (req, res): Promise<void> => {
       `systemctl restart ${name}.service 2>&1 || pm2 restart ${name} 2>&1`,
       15000
     );
-    emitActivity({ actionType: "vps_service", detail: `restart ${name}`, timestamp: new Date().toISOString() });
+    persistAndEmitActivity({ actionType: "vps_service", detail: `restart ${name}`, timestamp: new Date().toISOString() });
     res.json({ success: exitCode === 0, stdout, stderr });
   } catch (err) {
     res.status(500).json({ error: err instanceof Error ? err.message : String(err) });
@@ -332,7 +332,7 @@ router.post("/vps/exec", async (req, res): Promise<void> => {
 
   try {
     const result = await exec(creds.id, creds, command, timeout ?? 30000);
-    emitActivity({ actionType: "vps_exec", detail: `Ran: ${command.substring(0, 80)}`, timestamp: new Date().toISOString() });
+    persistAndEmitActivity({ actionType: "vps_exec", detail: `Ran: ${command.substring(0, 80)}`, timestamp: new Date().toISOString() });
     res.json({ success: result.exitCode === 0, stdout: result.stdout, stderr: result.stderr, exitCode: result.exitCode });
   } catch (err) {
     res.json({ success: false, stdout: "", stderr: err instanceof Error ? err.message : String(err), exitCode: null });
@@ -343,8 +343,16 @@ router.get("/vps/logs", async (req, res): Promise<void> => {
   const creds = await getVpsCreds();
   if (!creds) { res.status(404).json({ error: "VPS not configured" }); return; }
 
-  const logPath = String(req.query.path ?? "/var/log/syslog");
-  const lines = parseInt(String(req.query.lines ?? "50"), 10);
+  const rawPath = String(req.query.path ?? "/var/log/syslog");
+  const rawLines = parseInt(String(req.query.lines ?? "50"), 10);
+
+  const LOG_PATH_RE = /^\/[a-zA-Z0-9_.\-/]+$/;
+  if (!LOG_PATH_RE.test(rawPath)) {
+    res.status(400).json({ error: "Invalid log path" });
+    return;
+  }
+  const logPath = rawPath;
+  const lines = Math.min(Math.max(1, isNaN(rawLines) ? 50 : rawLines), 500);
 
   res.setHeader("Content-Type", "text/event-stream");
   res.setHeader("Cache-Control", "no-cache");
@@ -362,7 +370,8 @@ router.get("/vps/logs", async (req, res): Promise<void> => {
   req.on("close", cleanup);
 
   try {
-    const command = `tail -n ${lines} -f "${logPath}" 2>&1`;
+    const safeLines = String(lines);
+    const command = `tail -n ${safeLines} -f -- "${logPath}" 2>&1`;
     stopStream = await execStreaming(creds as SshCredentials, command, (chunk) => {
       const logLines = chunk.split("\n");
       for (const line of logLines) {

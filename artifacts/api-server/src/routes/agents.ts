@@ -9,7 +9,7 @@ import {
 } from "@workspace/db";
 import { eq, desc } from "drizzle-orm";
 import { runAgentChat, runAgentChatInternal } from "../lib/agentRunner";
-import { emitActivity, agentStatusEmitter, emitAgentStatus } from "../lib/activityEmitter";
+import { persistAndEmitActivity, agentStatusEmitter, emitAgentStatus } from "../lib/activityEmitter";
 
 const router: IRouter = Router();
 
@@ -149,7 +149,7 @@ router.post("/agents/:id/messages", async (req, res): Promise<void> => {
   const [fromAgent] = await db.select().from(agentsTable).where(eq(agentsTable.id, fromAgentId));
   const [toAgent] = await db.select().from(agentsTable).where(eq(agentsTable.id, toAgentId));
 
-  emitActivity({
+  void persistAndEmitActivity({
     agentId: fromAgentId,
     agentName: fromAgent?.name ?? "Unknown",
     actionType: "agent_message",

@@ -17,16 +17,32 @@ export const activityEmitter = new ActivityEmitter();
 
 export function emitActivity(event: ActivityEvent): void {
   activityEmitter.emit("activity", event);
-  db.insert(activityLogTable)
-    .values({
-      agentId: event.agentId ?? null,
-      agentName: event.agentName ?? null,
+}
+
+export async function persistAndEmitActivity(event: Omit<ActivityEvent, "id">): Promise<void> {
+  try {
+    const [entry] = await db
+      .insert(activityLogTable)
+      .values({
+        agentId: event.agentId ?? null,
+        agentName: event.agentName ?? null,
+        actionType: event.actionType,
+        detail: event.detail,
+      })
+      .returning();
+
+    emitActivity({
+      id: entry?.id,
+      agentId: event.agentId,
+      agentName: event.agentName,
       actionType: event.actionType,
       detail: event.detail,
-    })
-    .catch((err: unknown) => {
-      console.error("[activityEmitter] DB persist failed:", err);
+      timestamp: entry?.timestamp?.toISOString() ?? event.timestamp,
     });
+  } catch (err: unknown) {
+    console.error("[activityEmitter] DB persist failed:", err);
+    emitActivity(event);
+  }
 }
 
 export interface AgentStatusEvent {

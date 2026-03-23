@@ -25,8 +25,7 @@ import {
   codeExecTool,
   sendEmailTool,
 } from "./agentTools";
-import { emitActivity } from "./activityEmitter";
-import { emitAgentStatus } from "./activityEmitter";
+import { persistAndEmitActivity, emitAgentStatus } from "./activityEmitter";
 
 function sendEvent(res: Response, data: Record<string, unknown>): void {
   res.write(`data: ${JSON.stringify(data)}\n\n`);
@@ -35,6 +34,11 @@ function sendEvent(res: Response, data: Record<string, unknown>): void {
 async function setAgentStatus(agentId: number, status: string): Promise<void> {
   await db.update(agentsTable).set({ status, lastActiveAt: new Date() }).where(eq(agentsTable.id, agentId));
   emitAgentStatus({ agentId, status });
+}
+
+async function getConfiguredModel(): Promise<string> {
+  const [settings] = await db.select().from(appSettingsTable).limit(1);
+  return settings?.aiModel ?? "gpt-5.2";
 }
 
 export async function runAgentChat(
@@ -77,7 +81,7 @@ export async function runAgentChat(
   await setAgentStatus(agentId, "thinking");
   sendEvent(res, { type: "step", data: "Analysing your request..." });
 
-  await emitActivity({
+  void persistAndEmitActivity({
     agentId,
     agentName: agent.name,
     actionType: "chat",
@@ -108,6 +112,7 @@ Format your response as:
   ];
 
   let finalAnswer = "";
+  const model = await getConfiguredModel();
 
   try {
     let continueLoop = true;
@@ -117,7 +122,7 @@ Format your response as:
       iterations++;
 
       const completion = await openai.chat.completions.create({
-        model: "gpt-5.2",
+        model,
         max_completion_tokens: 8192,
         messages: messages as Parameters<typeof openai.chat.completions.create>[0]["messages"],
         ...(tools.length > 0 ? { tools, tool_choice: "auto" } : {}),
@@ -421,6 +426,7 @@ Provide a clear, well-structured answer. End your response naturally.`,
   ];
 
   let finalAnswer = "";
+  const model = await getConfiguredModel();
 
   try {
     let continueLoop = true;
@@ -430,7 +436,7 @@ Provide a clear, well-structured answer. End your response naturally.`,
       iterations++;
 
       const completion = await openai.chat.completions.create({
-        model: "gpt-5.2",
+        model,
         max_completion_tokens: 4096,
         messages: messages as Parameters<typeof openai.chat.completions.create>[0]["messages"],
         ...(tools.length > 0 ? { tools, tool_choice: "auto" } : {}),
