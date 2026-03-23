@@ -1,4 +1,6 @@
 import { EventEmitter } from "events";
+import { db } from "@workspace/db";
+import { activityLogTable } from "@workspace/db";
 
 export interface ActivityEvent {
   id?: number;
@@ -15,6 +17,16 @@ export const activityEmitter = new ActivityEmitter();
 
 export function emitActivity(event: ActivityEvent): void {
   activityEmitter.emit("activity", event);
+  db.insert(activityLogTable)
+    .values({
+      agentId: event.agentId ?? null,
+      agentName: event.agentName ?? null,
+      actionType: event.actionType,
+      detail: event.detail,
+    })
+    .catch((err: unknown) => {
+      console.error("[activityEmitter] DB persist failed:", err);
+    });
 }
 
 export interface AgentStatusEvent {

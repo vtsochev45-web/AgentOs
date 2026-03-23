@@ -18,8 +18,8 @@ const createSchema = z.object({
 const AVAILABLE_TOOLS = [
   { id: "web_search", label: "Web Search", icon: Search },
   { id: "vps_shell", label: "VPS Shell", icon: Terminal },
-  { id: "code_runner", label: "Code Exec", icon: Code },
-  { id: "messaging", label: "Messaging", icon: MessageSquare },
+  { id: "code_exec", label: "Code Exec", icon: Code },
+  { id: "send_email", label: "Email/Messaging", icon: MessageSquare },
 ];
 
 export default function Agents() {
@@ -39,7 +39,7 @@ export default function Agents() {
 
   const form = useForm<z.infer<typeof createSchema>>({
     resolver: zodResolver(createSchema),
-    defaultValues: { name: "", persona: "", toolsEnabled: ["web_search", "vps_shell"] }
+    defaultValues: { name: "", persona: "", toolsEnabled: ["web_search"] }
   });
 
   const onSubmit = (data: z.infer<typeof createSchema>) => {

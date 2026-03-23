@@ -5,8 +5,7 @@ import { AgentStatusBadge } from "@/components/ui/AgentStatusBadge";
 import { useSSEChat } from "@/hooks/use-sse";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
-import { ArrowLeft, Send, Sparkles, ServerCrash, Layers, Globe, FileCode2, Bot } from "lucide-react";
-import { format } from "date-fns";
+import { ArrowLeft, Send, Sparkles, ServerCrash, Globe, Bot } from "lucide-react";
 
 export default function AgentWorkspace() {
   const [, params] = useRoute("/agents/:id");
@@ -31,13 +30,16 @@ export default function AgentWorkspace() {
   const { streamChat, isStreaming, stopStream } = useSSEChat();
   const [input, setInput] = useState("");
   
-  // Local state for the streaming message
+  interface StreamSource { title: string; url: string; snippet: string; favicon?: string | null }
+
   const [streamData, setStreamData] = useState<{
     content: string;
     steps: string[];
-    sources: any[];
+    sources: StreamSource[];
     followups: string[];
   } | null>(null);
+
+  const [lastFollowups, setLastFollowups] = useState<string[]>([]);
 
   const messagesEndRef = useRef<HTMLDivElement>(null);
   
@@ -51,16 +53,21 @@ export default function AgentWorkspace() {
 
     const userMsg = input.trim();
     setInput("");
+    setLastFollowups([]);
     setStreamData({ content: "", steps: [], sources: [], followups: [] });
 
     await streamChat(agentId, userMsg, activeConvId, (msg) => {
       setStreamData(prev => {
         if (!prev) return null;
         const next = { ...prev };
-        if (msg.type === 'step') next.steps.push(msg.data);
-        if (msg.type === 'source') next.sources.push(msg.data);
-        if (msg.type === 'content') next.content += msg.data;
-        if (msg.type === 'followups') next.followups = msg.data;
+        if (msg.type === 'step') next.steps = [...prev.steps, String(msg.data)];
+        if (msg.type === 'source') next.sources = [...prev.sources, msg.data as unknown as StreamSource];
+        if (msg.type === 'content') next.content = prev.content + String(msg.data);
+        if (msg.type === 'followups') {
+          const fups = Array.isArray(msg.data) ? (msg.data as string[]) : [];
+          next.followups = fups;
+          setLastFollowups(fups);
+        }
         return next;
       });
     });
@@ -208,12 +215,12 @@ export default function AgentWorkspace() {
 
         {/* Input Area */}
         <div className="p-4 bg-black/20 border-t border-white/5">
-          {/* Follow-up suggestions */}
-          {!isStreaming && streamData?.followups && streamData.followups.length > 0 && (
+          {/* Follow-up suggestions — persisted from last streamed response */}
+          {!isStreaming && lastFollowups.length > 0 && (
              <div className="flex gap-2 overflow-x-auto mb-4 custom-scrollbar pb-1">
-                {streamData.followups.map((f, i) => (
-                  <button 
-                    key={i} 
+                {lastFollowups.map((f, i) => (
+                  <button
+                    key={i}
                     onClick={() => setInput(f)}
                     className="whitespace-nowrap px-4 py-1.5 rounded-full bg-white/5 hover:bg-white/10 border border-white/10 text-xs text-primary/80 hover:text-primary transition-colors"
                   >
