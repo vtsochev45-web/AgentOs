@@ -1,6 +1,7 @@
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
+import type { VpsConfig, AppSettings } from "@workspace/api-client-react";
 import { useGetSettings, useSaveSettings, useGetVpsConfig, useSaveVpsConfig } from "@workspace/api-client-react";
 import { Settings as SettingsIcon, Server, Brain, Mail, Save, Search } from "lucide-react";
 import { useQueryClient } from "@tanstack/react-query";
@@ -39,14 +40,14 @@ export default function Settings() {
       </header>
 
       <div className="space-y-8">
-        <VpsConfigForm initialData={vpsConfig} />
-        <GlobalConfigForm initialData={settings} />
+        <VpsConfigForm initialData={vpsConfig as VpsConfig | undefined} />
+        <GlobalConfigForm initialData={settings as AppSettings | undefined} />
       </div>
     </div>
   );
 }
 
-function VpsConfigForm({ initialData }: { initialData?: Record<string, unknown> }) {
+function VpsConfigForm({ initialData }: { initialData?: VpsConfig }) {
   const mutation = useSaveVpsConfig();
   const { toast } = useToast();
   const queryClient = useQueryClient();
@@ -54,9 +55,9 @@ function VpsConfigForm({ initialData }: { initialData?: Record<string, unknown> 
   const form = useForm({
     resolver: zodResolver(vpsSchema),
     values: {
-      host: String(initialData?.host ?? ""),
-      username: String(initialData?.username ?? "root"),
-      port: Number(initialData?.port ?? 22),
+      host: initialData?.host ?? "",
+      username: initialData?.username ?? "root",
+      port: initialData?.port ?? 22,
       authType: (initialData?.authType as "password" | "key") ?? "password",
       password: "",
       privateKey: "",
@@ -133,7 +134,7 @@ function VpsConfigForm({ initialData }: { initialData?: Record<string, unknown> 
   );
 }
 
-function GlobalConfigForm({ initialData }: { initialData?: Record<string, unknown> }) {
+function GlobalConfigForm({ initialData }: { initialData?: AppSettings }) {
   const mutation = useSaveSettings();
   const { toast } = useToast();
   const queryClient = useQueryClient();
@@ -141,12 +142,12 @@ function GlobalConfigForm({ initialData }: { initialData?: Record<string, unknow
   const form = useForm({
     resolver: zodResolver(globalSchema),
     values: {
-      smtpHost: String(initialData?.smtpHost ?? ""),
-      smtpPort: Number(initialData?.smtpPort ?? 587),
-      smtpUser: String(initialData?.smtpUser ?? ""),
-      smtpPassword: String(initialData?.smtpPassword ?? ""),
-      searchProvider: (initialData?.searchProvider as "duckduckgo" | "brave") ?? "duckduckgo",
-      braveApiKey: String(initialData?.braveApiKey ?? ""),
+      smtpHost: initialData?.smtpHost ?? "",
+      smtpPort: initialData?.smtpPort ?? 587,
+      smtpUser: initialData?.smtpUser ?? "",
+      smtpPassword: "",
+      searchProvider: (initialData?.searchProvider as "duckduckgo" | "brave" | undefined) ?? "duckduckgo",
+      braveApiKey: "",
     },
   });
 

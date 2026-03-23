@@ -6,8 +6,9 @@ import { vpsConfigTable } from "@workspace/db";
 import { decrypt } from "./encryption";
 import { logger } from "./logger";
 import { Client, type ConnectConfig } from "ssh2";
+import type { SshCredentials } from "./sshManager";
 
-async function getVpsCreds() {
+async function getVpsCreds(): Promise<SshCredentials | null> {
   const [config] = await db.select().from(vpsConfigTable).limit(1);
   if (!config || !config.encryptedCredential) return null;
   const cred = decrypt(config.encryptedCredential);
@@ -16,7 +17,8 @@ async function getVpsCreds() {
     port: config.port,
     username: config.username,
     authType: config.authType as "password" | "key",
-    ...(config.authType === "password" ? { password: cred } : { privateKey: cred }),
+    password: config.authType === "password" ? cred : undefined,
+    privateKey: config.authType === "key" ? cred : undefined,
   };
 }
 
@@ -53,9 +55,9 @@ export function setupWebSocketTerminal(server: Server): void {
       readyTimeout: 15000,
     };
 
-    if (creds.authType === "password" && creds.password) {
+    if (creds.password) {
       config.password = creds.password;
-    } else if (creds.authType === "key" && creds.privateKey) {
+    } else if (creds.privateKey) {
       config.privateKey = creds.privateKey;
     }
 

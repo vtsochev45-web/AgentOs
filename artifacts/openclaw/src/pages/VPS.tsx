@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState, useCallback } from "react";
-import { useGetVpsStats, useListVpsProcesses, useListVpsServices, useControlVpsService } from "@workspace/api-client-react";
+import { useGetVpsStats, getGetVpsStatsQueryKey, useListVpsProcesses, getListVpsProcessesQueryKey, useListVpsServices, getListVpsServicesQueryKey, useControlVpsService } from "@workspace/api-client-react";
 import { Terminal } from "@xterm/xterm";
 import { FitAddon } from "@xterm/addon-fit";
 import { useWebSocketTerminal } from "@/hooks/use-websocket";
@@ -118,8 +118,8 @@ function TerminalView() {
 }
 
 function StatsView() {
-  const { data: stats, isLoading } = useGetVpsStats({ query: { refetchInterval: 5000 } });
-  const { data: procs, refetch: refetchProcs } = useListVpsProcesses({ query: { refetchInterval: 10000 } });
+  const { data: stats, isLoading } = useGetVpsStats({ query: { queryKey: getGetVpsStatsQueryKey(), refetchInterval: 5000 } });
+  const { data: procs, refetch: refetchProcs } = useListVpsProcesses({ query: { queryKey: getListVpsProcessesQueryKey(), refetchInterval: 10000 } });
   const queryClient = useQueryClient();
 
   const killMutation = useMutation({
@@ -209,7 +209,7 @@ function StatCard({ title, icon: Icon, value, progress }: { title: string; icon:
 }
 
 function ServicesView() {
-  const { data: services, isLoading } = useListVpsServices();
+  const { data: services, isLoading } = useListVpsServices({ query: { queryKey: getListVpsServicesQueryKey() } });
   const controlMutation = useControlVpsService();
   const queryClient = useQueryClient();
 

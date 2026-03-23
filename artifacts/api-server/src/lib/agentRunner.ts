@@ -1,4 +1,10 @@
 import { openai } from "@workspace/integrations-openai-ai-server";
+
+type ChatMsg =
+  | { role: "system"; content: string }
+  | { role: "user"; content: string }
+  | { role: "assistant"; content: string }
+  | { role: "tool"; content: string; tool_call_id: string };
 import { db } from "@workspace/db";
 import {
   agentsTable,
@@ -81,7 +87,7 @@ export async function runAgentChat(
   const tools = buildToolDefinitions(toolsEnabled);
   const sources: Array<{ title: string; url: string; snippet: string; favicon?: string | null }> = [];
 
-  const messages: Array<{ role: "system" | "user" | "assistant" | "tool"; content: string; tool_call_id?: string; name?: string }> = [
+  const messages: ChatMsg[] = [
     {
       role: "system",
       content: `You are ${agent.name}. ${agent.persona}
@@ -97,7 +103,7 @@ Format your response as:
       role: m.role as "user" | "assistant",
       content: m.content,
     })),
-    { role: "user", content: userMessage },
+    { role: "user" as const, content: userMessage },
   ];
 
   let finalAnswer = "";
@@ -112,7 +118,7 @@ Format your response as:
       const completion = await openai.chat.completions.create({
         model: "gpt-5.2",
         max_completion_tokens: 8192,
-        messages,
+        messages: messages as Parameters<typeof openai.chat.completions.create>[0]["messages"],
         ...(tools.length > 0 ? { tools, tool_choice: "auto" } : {}),
         stream: false,
       });
@@ -123,12 +129,13 @@ Format your response as:
       const msg = choice.message;
 
       if (msg.tool_calls && msg.tool_calls.length > 0) {
-        messages.push({ role: "assistant", content: msg.content ?? "" });
+        messages.push({ role: "assistant" as const, content: msg.content ?? "" });
 
         for (const toolCall of msg.tool_calls) {
-          const fnName = toolCall.function.name;
+          const tc = toolCall as { id: string; type: "function"; function: { name: string; arguments: string } };
+          const fnName = tc.function.name;
           let args: Record<string, unknown> = {};
-          try { args = JSON.parse(toolCall.function.arguments); } catch {}
+          try { args = JSON.parse(tc.function.arguments); } catch {}
 
           sendEvent(res, { type: "step", data: getToolStepMessage(fnName, args) });
           await setAgentStatus(agentId, getToolStatus(fnName));
@@ -169,10 +176,9 @@ Format your response as:
           }
 
           messages.push({
-            role: "tool",
+            role: "tool" as const,
             content: toolResult,
-            tool_call_id: toolCall.id,
-            name: fnName,
+            tool_call_id: tc.id,
           });
         }
       } else {

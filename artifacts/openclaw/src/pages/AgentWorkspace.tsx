@@ -1,6 +1,6 @@
 import { useState, useRef, useEffect } from "react";
 import { useRoute, Link } from "wouter";
-import { useGetAgent, useListAgentConversations, useGetConversation } from "@workspace/api-client-react";
+import { useGetAgent, useListAgentConversations, useGetConversation, getGetConversationQueryKey } from "@workspace/api-client-react";
 import { AgentStatusBadge } from "@/components/ui/AgentStatusBadge";
 import { useSSEChat } from "@/hooks/use-sse";
 import ReactMarkdown from "react-markdown";
@@ -25,7 +25,7 @@ export default function AgentWorkspace() {
   }, [conversations, activeConvId]);
 
   const { data: conversationData, refetch: refetchMessages } = useGetConversation(activeConvId || 0, {
-    query: { enabled: !!activeConvId }
+    query: { queryKey: getGetConversationQueryKey(activeConvId || 0), enabled: !!activeConvId }
   });
 
   const { streamChat, isStreaming, stopStream } = useSSEChat();

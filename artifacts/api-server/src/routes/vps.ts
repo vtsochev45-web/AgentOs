@@ -2,13 +2,15 @@ import { Router, type IRouter } from "express";
 import { db } from "@workspace/db";
 import { vpsConfigTable } from "@workspace/db";
 import { encrypt, decrypt } from "../lib/encryption";
-import { execWithCreds, execStreaming, sftpReadFile, sftpWriteFile, sftpListDir } from "../lib/sshManager";
+import { execWithCreds, execStreaming, sftpReadFile, sftpWriteFile, sftpListDir, sftpUnlink, type SshCredentials } from "../lib/sshManager";
 import { eq } from "drizzle-orm";
 import { emitActivity } from "../lib/activityEmitter";
 
 const router: IRouter = Router();
 
-async function getVpsCreds() {
+const SERVICE_NAME_RE = /^[a-zA-Z0-9_@.-]+$/;
+
+async function getVpsCreds(): Promise<(SshCredentials & { id: number }) | null> {
   const [config] = await db.select().from(vpsConfigTable).limit(1);
   if (!config || !config.encryptedCredential) return null;
   const cred = decrypt(config.encryptedCredential);
@@ -18,7 +20,8 @@ async function getVpsCreds() {
     port: config.port,
     username: config.username,
     authType: config.authType as "password" | "key",
-    ...(config.authType === "password" ? { password: cred } : { privateKey: cred }),
+    password: config.authType === "password" ? cred : undefined,
+    privateKey: config.authType === "key" ? cred : undefined,
   };
 }
 
@@ -202,6 +205,11 @@ router.post("/vps/services/:name/:action", async (req, res): Promise<void> => {
     return;
   }
 
+  if (!SERVICE_NAME_RE.test(name)) {
+    res.status(400).json({ error: "Invalid service name" });
+    return;
+  }
+
   try {
     const { stdout, stderr, exitCode } = await execWithCreds(creds,
       `systemctl ${action} ${name}.service 2>&1 || pm2 ${action} ${name} 2>&1`,
@@ -263,14 +271,55 @@ router.delete("/vps/files/delete", async (req, res): Promise<void> => {
   const creds = await getVpsCreds();
   if (!creds) { res.status(404).json({ error: "VPS not configured" }); return; }
 
-  const path = String(req.query.path ?? "");
-  if (!path) { res.status(400).json({ error: "path required" }); return; }
+  const filePath = String(req.query.path ?? "");
+  if (!filePath) { res.status(400).json({ error: "path required" }); return; }
 
   try {
-    const { stdout, stderr, exitCode } = await execWithCreds(creds, `rm -rf "${path}" 2>&1 && echo "deleted"`, 10000);
-    res.json({ success: exitCode === 0, stdout, stderr });
+    await sftpUnlink(creds, filePath);
+    emitActivity({ actionType: "file_delete", detail: `Deleted: ${filePath}`, timestamp: new Date().toISOString() });
+    res.json({ success: true, stdout: `Deleted ${filePath}`, stderr: "" });
   } catch (err) {
     res.json({ success: false, stdout: "", stderr: err instanceof Error ? err.message : String(err) });
+  }
+});
+
+router.post("/vps/files/upload", async (req, res): Promise<void> => {
+  const creds = await getVpsCreds();
+  if (!creds) { res.status(404).json({ error: "VPS not configured" }); return; }
+
+  const { path: filePath, content } = req.body as { path: string; content: string };
+  if (!filePath || content === undefined) { res.status(400).json({ error: "path and content required" }); return; }
+
+  try {
+    await sftpWriteFile(creds, filePath, content);
+    emitActivity({ actionType: "file_write", detail: `Uploaded: ${filePath}`, timestamp: new Date().toISOString() });
+    res.json({ success: true, stdout: `Uploaded to ${filePath}`, stderr: "" });
+  } catch (err) {
+    res.json({ success: false, stdout: "", stderr: err instanceof Error ? err.message : String(err) });
+  }
+});
+
+router.post("/vps/processes/restart", async (req, res): Promise<void> => {
+  const creds = await getVpsCreds();
+  if (!creds) { res.status(404).json({ error: "VPS not configured" }); return; }
+
+  const { name } = req.body as { name?: string };
+  if (!name) { res.status(400).json({ error: "name required" }); return; }
+
+  if (!SERVICE_NAME_RE.test(name)) {
+    res.status(400).json({ error: "Invalid process name" });
+    return;
+  }
+
+  try {
+    const { stdout, stderr, exitCode } = await execWithCreds(creds,
+      `systemctl restart ${name}.service 2>&1 || pm2 restart ${name} 2>&1`,
+      15000
+    );
+    emitActivity({ actionType: "vps_service", detail: `restart ${name}`, timestamp: new Date().toISOString() });
+    res.json({ success: exitCode === 0, stdout, stderr });
+  } catch (err) {
+    res.status(500).json({ error: err instanceof Error ? err.message : String(err) });
   }
 });
 

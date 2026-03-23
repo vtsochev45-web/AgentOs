@@ -13,8 +13,8 @@ export interface SshCredentials {
   port: number;
   username: string;
   authType: "password" | "key";
-  password?: string;
-  privateKey?: string;
+  password?: string | undefined;
+  privateKey?: string | undefined;
 }
 
 async function connect(id: number, creds: SshCredentials): Promise<Client> {
@@ -175,7 +175,7 @@ export async function sftpReadFile(creds: SshCredentials, remotePath: string): P
         sftp.readFile(remotePath, "utf8", (err2, data) => {
           client.end();
           if (err2) { reject(err2); return; }
-          resolve(data as string);
+          resolve(data as unknown as string);
         });
       });
     }).on("error", reject).connect(config);
@@ -230,9 +230,9 @@ export async function sftpListDir(creds: SshCredentials, remotePath: string): Pr
       readyTimeout: 15000,
     };
 
-    if (creds.authType === "password" && creds.password) {
+    if (creds.password) {
       config.password = creds.password;
-    } else if (creds.authType === "key" && creds.privateKey) {
+    } else if (creds.privateKey) {
       config.privateKey = creds.privateKey;
     }
 
@@ -257,6 +257,37 @@ export async function sftpListDir(creds: SshCredentials, remotePath: string): Pr
           });
 
           resolve(entries);
+        });
+      });
+    }).on("error", reject).connect(config);
+  });
+}
+
+export async function sftpUnlink(creds: SshCredentials, remotePath: string): Promise<void> {
+  const client = new Client();
+
+  return new Promise((resolve, reject) => {
+    const config: ConnectConfig = {
+      host: creds.host,
+      port: creds.port,
+      username: creds.username,
+      readyTimeout: 15000,
+    };
+
+    if (creds.password) {
+      config.password = creds.password;
+    } else if (creds.privateKey) {
+      config.privateKey = creds.privateKey;
+    }
+
+    client.on("ready", () => {
+      client.sftp((err, sftp) => {
+        if (err) { client.end(); reject(err); return; }
+
+        sftp.unlink(remotePath, (err2) => {
+          client.end();
+          if (err2) { reject(err2); return; }
+          resolve();
         });
       });
     }).on("error", reject).connect(config);

@@ -1,3 +1,5 @@
+import path from "path";
+import os from "os";
 import { db } from "@workspace/db";
 import { activityLogTable, agentsTable, appSettingsTable } from "@workspace/db";
 import { eq } from "drizzle-orm";
@@ -148,11 +150,10 @@ export async function vpsShellTool(
 }
 
 function resolveSandboxPath(sandboxDir: string, userPath: string): string | null {
-  const pathModule = require("path") as typeof import("path");
   const normalized = userPath.replace(/^\/+/, "");
-  const resolved = pathModule.resolve(sandboxDir, normalized);
-  const sandboxResolved = pathModule.resolve(sandboxDir);
-  if (resolved !== sandboxResolved && !resolved.startsWith(sandboxResolved + pathModule.sep)) {
+  const resolved = path.resolve(sandboxDir, normalized);
+  const sandboxResolved = path.resolve(sandboxDir);
+  if (resolved !== sandboxResolved && !resolved.startsWith(sandboxResolved + path.sep)) {
     return null;
   }
   return resolved;
@@ -164,7 +165,6 @@ export async function fileReadTool(
   filePath: string
 ): Promise<ToolResult> {
   const fs = await import("fs/promises");
-  const path = await import("path");
 
   const sandboxDir = path.resolve(process.cwd(), "agent-files", String(agentId));
   await fs.mkdir(sandboxDir, { recursive: true });
@@ -190,7 +190,6 @@ export async function fileWriteTool(
   content: string
 ): Promise<ToolResult> {
   const fs = await import("fs/promises");
-  const path = await import("path");
 
   const sandboxDir = path.resolve(process.cwd(), "agent-files", String(agentId));
   await fs.mkdir(sandboxDir, { recursive: true });
@@ -212,7 +211,6 @@ export async function fileWriteTool(
 
 export async function fileListTool(agentId: number, agentName: string, dir = ""): Promise<ToolResult> {
   const fs = await import("fs/promises");
-  const path = await import("path");
 
   const sandboxDir = path.resolve(process.cwd(), "agent-files", String(agentId));
   await fs.mkdir(sandboxDir, { recursive: true });
@@ -239,9 +237,7 @@ export async function codeExecTool(
   await logActivity(agentId, agentName, "code_exec", `Executing ${language} code`);
 
   const fs = await import("fs/promises");
-  const path = await import("path");
   const { spawn } = await import("child_process");
-  const os = await import("os");
 
   const ext = language === "python" ? ".py" : ".mjs";
   const tmpFile = path.join(os.tmpdir(), `agent-${agentId}-${Date.now()}${ext}`);
