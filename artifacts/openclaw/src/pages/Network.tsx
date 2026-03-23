@@ -1,6 +1,7 @@
 import { useEffect, useRef } from "react";
 import { useListAgents } from "@workspace/api-client-react";
 import { useQuery } from "@tanstack/react-query";
+import { apiFetch } from "@/lib/api";
 import * as d3 from "d3";
 import { Network as NetworkIcon } from "lucide-react";
 
@@ -25,7 +26,7 @@ function useNetworkEdges() {
   return useQuery<NetworkEdge[]>({
     queryKey: ["/api/network/edges"],
     queryFn: async () => {
-      const res = await fetch("/api/network/edges");
+      const res = await apiFetch("/api/network/edges");
       if (!res.ok) throw new Error("Failed to fetch edges");
       return res.json() as Promise<NetworkEdge[]>;
     },

@@ -106,7 +106,9 @@ export function useSSEActivity() {
   const connect = useCallback(() => {
     if (eventSourceRef.current) return;
 
-    const es = new EventSource("/api/activity/stream");
+    const apiKey = getApiKey();
+    const keyParam = apiKey ? `?api_key=${encodeURIComponent(apiKey)}` : "";
+    const es = new EventSource(`/api/activity/stream${keyParam}`);
     eventSourceRef.current = es;
 
     es.onopen = () => setIsConnected(true);
@@ -154,7 +156,9 @@ export function useSSEAgentStatus(onStatusChange: (ev: AgentStatusEvent) => void
   const connect = useCallback(() => {
     if (eventSourceRef.current) return;
 
-    const es = new EventSource("/api/agents/stream");
+    const apiKey2 = getApiKey();
+    const keyParam2 = apiKey2 ? `?api_key=${encodeURIComponent(apiKey2)}` : "";
+    const es = new EventSource(`/api/agents/stream${keyParam2}`);
     eventSourceRef.current = es;
 
     es.onopen = () => setIsConnected(true);

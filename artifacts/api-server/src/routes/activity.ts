@@ -3,10 +3,11 @@ import { db } from "@workspace/db";
 import { activityLogTable } from "@workspace/db";
 import { desc, eq } from "drizzle-orm";
 import { activityEmitter } from "../lib/activityEmitter";
+import { requireApiKey } from "../middlewares/requireApiKey";
 
 const router: IRouter = Router();
 
-router.get("/activity", async (req, res): Promise<void> => {
+router.get("/activity", requireApiKey, async (req, res): Promise<void> => {
   const limit = parseInt(String(req.query.limit ?? "50"), 10);
   const agentId = req.query.agentId ? parseInt(String(req.query.agentId), 10) : null;
 
@@ -30,7 +31,7 @@ router.get("/activity", async (req, res): Promise<void> => {
   res.json(entries);
 });
 
-router.get("/activity/stream", async (req, res): Promise<void> => {
+router.get("/activity/stream", requireApiKey, async (req, res): Promise<void> => {
   res.setHeader("Content-Type", "text/event-stream");
   res.setHeader("Cache-Control", "no-cache");
   res.setHeader("Connection", "keep-alive");

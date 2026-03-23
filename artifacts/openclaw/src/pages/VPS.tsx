@@ -327,7 +327,9 @@ function FilesView() {
   });
 
   const downloadFile = (path: string) => {
-    window.open(`/api/vps/files/download?path=${encodeURIComponent(path)}`, "_blank");
+    const apiKey = getApiKey();
+    const keyParam = apiKey ? `&api_key=${encodeURIComponent(apiKey)}` : "";
+    window.open(`/api/vps/files/download?path=${encodeURIComponent(path)}${keyParam}`, "_blank");
   };
 
   const pathParts = currentPath.split("/").filter(Boolean);
@@ -527,7 +529,9 @@ function LogsView() {
     setError(null);
     setIsStreaming(true);
 
-    const url = `/api/vps/logs?path=${encodeURIComponent(logPath)}&lines=100`;
+    const apiKey = getApiKey();
+    const keyParam = apiKey ? `&api_key=${encodeURIComponent(apiKey)}` : "";
+    const url = `/api/vps/logs?path=${encodeURIComponent(logPath)}&lines=100${keyParam}`;
     const es = new EventSource(url);
     eventSourceRef.current = es;
 
