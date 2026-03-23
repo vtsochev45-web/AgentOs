@@ -197,7 +197,8 @@ router.get("/network/edges", requireApiKey, async (req, res): Promise<void> => {
 });
 
 router.get("/agents/:id/files", requireApiKey, async (req, res): Promise<void> => {
-  const agentId = parseInt(req.params.id, 10);
+  const rawId = Array.isArray(req.params.id) ? req.params.id[0] : req.params.id;
+  const agentId = parseInt(rawId, 10);
   if (isNaN(agentId)) { res.status(400).json({ error: "Invalid agent id" }); return; }
   const files = await db
     .select()

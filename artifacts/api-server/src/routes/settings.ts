@@ -12,7 +12,7 @@ function safeDecrypt(value: string | null | undefined): string | null {
   try { return decrypt(value); } catch { return null; }
 }
 
-router.get("/settings", async (req, res): Promise<void> => {
+router.get("/settings", requireApiKey, async (req, res): Promise<void> => {
   const [settings] = await db.select().from(appSettingsTable).limit(1);
   if (!settings) {
     res.json({
