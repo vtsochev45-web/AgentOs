@@ -3,6 +3,7 @@ import { db } from "@workspace/db";
 import { appSettingsTable } from "@workspace/db";
 import { eq } from "drizzle-orm";
 import { encrypt, decrypt } from "../lib/encryption";
+import { requireApiKey } from "../middlewares/requireApiKey";
 
 const router: IRouter = Router();
 
@@ -39,7 +40,7 @@ router.get("/settings", async (req, res): Promise<void> => {
   });
 });
 
-router.put("/settings", async (req, res): Promise<void> => {
+router.put("/settings", requireApiKey, async (req, res): Promise<void> => {
   const {
     aiModel, smtpHost, smtpPort, smtpUser, smtpPassword,
     webhookUrl, searchProvider, braveApiKey,

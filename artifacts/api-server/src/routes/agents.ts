@@ -11,6 +11,7 @@ import {
 import { eq, desc, or } from "drizzle-orm";
 import { runAgentChat, runAgentChatInternal } from "../lib/agentRunner";
 import { persistAndEmitActivity, agentStatusEmitter, emitAgentStatus } from "../lib/activityEmitter";
+import { requireApiKey } from "../middlewares/requireApiKey";
 
 const router: IRouter = Router();
 
@@ -19,7 +20,7 @@ router.get("/agents", async (req, res): Promise<void> => {
   res.json(agents);
 });
 
-router.post("/agents", async (req, res): Promise<void> => {
+router.post("/agents", requireApiKey, async (req, res): Promise<void> => {
   const { name, persona, toolsEnabled } = req.body as { name: string; persona: string; toolsEnabled?: string[] };
   if (!name || !persona) {
     res.status(400).json({ error: "name and persona are required" });
@@ -55,7 +56,7 @@ router.get("/agents/:id", async (req, res): Promise<void> => {
   res.json(agent);
 });
 
-router.patch("/agents/:id", async (req, res): Promise<void> => {
+router.patch("/agents/:id", requireApiKey, async (req, res): Promise<void> => {
   const id = parseInt(Array.isArray(req.params.id) ? req.params.id[0]! : req.params.id, 10);
   const { name, persona, toolsEnabled } = req.body as { name?: string; persona?: string; toolsEnabled?: string[] };
   const updates: Record<string, unknown> = {};
@@ -68,14 +69,14 @@ router.patch("/agents/:id", async (req, res): Promise<void> => {
   res.json(agent);
 });
 
-router.delete("/agents/:id", async (req, res): Promise<void> => {
+router.delete("/agents/:id", requireApiKey, async (req, res): Promise<void> => {
   const id = parseInt(Array.isArray(req.params.id) ? req.params.id[0]! : req.params.id, 10);
   const [agent] = await db.delete(agentsTable).where(eq(agentsTable.id, id)).returning();
   if (!agent) { res.status(404).json({ error: "Agent not found" }); return; }
   res.sendStatus(204);
 });
 
-router.patch("/agents/:id/status", async (req, res): Promise<void> => {
+router.patch("/agents/:id/status", requireApiKey, async (req, res): Promise<void> => {
   const id = parseInt(Array.isArray(req.params.id) ? req.params.id[0]! : req.params.id, 10);
   const { status } = req.body as { status: string };
   const [agent] = await db.update(agentsTable).set({ status, lastActiveAt: new Date() }).where(eq(agentsTable.id, id)).returning();
@@ -107,7 +108,7 @@ router.get("/conversations/:id", async (req, res): Promise<void> => {
   res.json({ ...conv, messages });
 });
 
-router.delete("/conversations/:id", async (req, res): Promise<void> => {
+router.delete("/conversations/:id", requireApiKey, async (req, res): Promise<void> => {
   const id = parseInt(Array.isArray(req.params.id) ? req.params.id[0]! : req.params.id, 10);
   const [conv] = await db.delete(agentConversationsTable).where(eq(agentConversationsTable.id, id)).returning();
   if (!conv) { res.status(404).json({ error: "Conversation not found" }); return; }
@@ -115,7 +116,7 @@ router.delete("/conversations/:id", async (req, res): Promise<void> => {
 });
 
 // Agent chat - SSE streaming
-router.post("/agents/:id/chat", async (req, res): Promise<void> => {
+router.post("/agents/:id/chat", requireApiKey, async (req, res): Promise<void> => {
   const id = parseInt(Array.isArray(req.params.id) ? req.params.id[0]! : req.params.id, 10);
   const { content, conversationId } = req.body as { content: string; conversationId?: number };
 
@@ -138,7 +139,7 @@ router.get("/agents/:id/messages", async (req, res): Promise<void> => {
   res.json(msgs);
 });
 
-router.post("/agents/:id/messages", async (req, res): Promise<void> => {
+router.post("/agents/:id/messages", requireApiKey, async (req, res): Promise<void> => {
   const fromAgentId = parseInt(Array.isArray(req.params.id) ? req.params.id[0]! : req.params.id, 10);
   const { toAgentId, content, threadId } = req.body as { toAgentId: number; content: string; threadId?: string };
 

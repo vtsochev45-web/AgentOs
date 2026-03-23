@@ -41,7 +41,7 @@ router.get("/vps/config", async (req, res): Promise<void> => {
   });
 });
 
-router.put("/vps/config", async (req, res): Promise<void> => {
+router.put("/vps/config", requireApiKey, async (req, res): Promise<void> => {
   const { label, host, port, username, authType, password, privateKey } = req.body as {
     label: string; host: string; port: number; username: string;
     authType: "password" | "key"; password?: string; privateKey?: string;
@@ -72,7 +72,7 @@ router.put("/vps/config", async (req, res): Promise<void> => {
   });
 });
 
-router.post("/vps/test", async (req, res): Promise<void> => {
+router.post("/vps/test", requireApiKey, async (req, res): Promise<void> => {
   const creds = await getVpsCreds();
   if (!creds) { res.json({ success: false, message: "VPS not configured" }); return; }
 

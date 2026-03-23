@@ -7,6 +7,7 @@ import { decrypt } from "./encryption";
 import { logger } from "./logger";
 import { Client, type ConnectConfig } from "ssh2";
 import type { SshCredentials } from "./sshManager";
+import { validateWsApiKey } from "../middlewares/requireApiKey";
 
 async function getVpsCreds(): Promise<SshCredentials | null> {
   const [config] = await db.select().from(vpsConfigTable).limit(1);
@@ -27,13 +28,21 @@ export function setupWebSocketTerminal(server: Server): void {
 
   server.on("upgrade", (request: IncomingMessage, socket, head) => {
     const url = request.url ?? "";
-    if (url.startsWith("/api/vps/terminal")) {
-      wss.handleUpgrade(request, socket, head, (ws) => {
-        wss.emit("connection", ws, request);
-      });
-    } else {
+    if (!url.startsWith("/api/vps/terminal")) {
       socket.destroy();
+      return;
     }
+
+    if (!validateWsApiKey(url)) {
+      logger.warn("WebSocket terminal upgrade rejected: invalid or missing API key");
+      socket.write("HTTP/1.1 401 Unauthorized\r\n\r\n");
+      socket.destroy();
+      return;
+    }
+
+    wss.handleUpgrade(request, socket, head, (ws) => {
+      wss.emit("connection", ws, request);
+    });
   });
 
   wss.on("connection", async (ws: WebSocket) => {
