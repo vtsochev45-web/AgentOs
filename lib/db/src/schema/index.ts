@@ -3,6 +3,7 @@ export * from "./messages";
 export * from "./agents";
 export * from "./agentConversations";
 export * from "./agentMessages";
+export * from "./agentFiles";
 export * from "./activityLog";
 export * from "./vpsConfig";
 export * from "./appSettings";

@@ -3,7 +3,7 @@ import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
 import type { VpsConfig, AppSettings } from "@workspace/api-client-react";
 import { useGetSettings, useSaveSettings, useGetVpsConfig, useSaveVpsConfig } from "@workspace/api-client-react";
-import { Settings as SettingsIcon, Server, Brain, Mail, Save, Search } from "lucide-react";
+import { Settings as SettingsIcon, Server, Brain, Mail, Save, Search, Webhook } from "lucide-react";
 import { useQueryClient } from "@tanstack/react-query";
 import { useToast } from "@/hooks/use-toast";
 
@@ -17,12 +17,14 @@ const vpsSchema = z.object({
 });
 
 const globalSchema = z.object({
+  aiModel: z.string().optional(),
   smtpHost: z.string().optional(),
   smtpPort: z.coerce.number().optional(),
   smtpUser: z.string().optional(),
   smtpPassword: z.string().optional(),
   searchProvider: z.enum(["duckduckgo", "brave"]).optional(),
   braveApiKey: z.string().optional(),
+  webhookUrl: z.string().url("Must be a valid URL").optional().or(z.literal("")),
 });
 
 export default function Settings() {
@@ -142,12 +144,14 @@ function GlobalConfigForm({ initialData }: { initialData?: AppSettings }) {
   const form = useForm({
     resolver: zodResolver(globalSchema),
     values: {
+      aiModel: initialData?.aiModel ?? "gpt-4o",
       smtpHost: initialData?.smtpHost ?? "",
       smtpPort: initialData?.smtpPort ?? 587,
       smtpUser: initialData?.smtpUser ?? "",
       smtpPassword: "",
       searchProvider: (initialData?.searchProvider as "duckduckgo" | "brave" | undefined) ?? "duckduckgo",
       braveApiKey: "",
+      webhookUrl: initialData?.webhookUrl ?? "",
     },
   });
 
@@ -170,6 +174,17 @@ function GlobalConfigForm({ initialData }: { initialData?: AppSettings }) {
         <h2 className="text-xl font-bold text-white">Intelligence & Integrations</h2>
       </div>
       <form onSubmit={form.handleSubmit(onSubmit)} className="p-6 space-y-8">
+        <div>
+          <h3 className="text-base font-semibold text-white mb-4 flex items-center gap-2">
+            <Brain className="w-4 h-4 text-accent" /> AI Model
+          </h3>
+          <div className="space-y-2">
+            <label className="text-sm font-medium text-white/80">Model Name</label>
+            <input {...form.register("aiModel")} className="w-full bg-black/40 border border-white/10 rounded-xl px-4 py-2.5 text-white focus:outline-none focus:ring-2 focus:ring-primary transition-all" placeholder="gpt-4o" />
+            <p className="text-xs text-muted-foreground">OpenAI model identifier used by all agents (e.g. gpt-4o, gpt-4-turbo, gpt-3.5-turbo).</p>
+          </div>
+        </div>
+
         <div>
           <h3 className="text-base font-semibold text-white mb-4 flex items-center gap-2">
             <Search className="w-4 h-4 text-primary" /> Web Search Provider
@@ -214,6 +229,18 @@ function GlobalConfigForm({ initialData }: { initialData?: AppSettings }) {
             </div>
           </div>
           <p className="text-xs text-muted-foreground mt-2">Used by agents with the "Messaging" tool to send emails on your behalf.</p>
+        </div>
+
+        <div>
+          <h3 className="text-base font-semibold text-white mb-4 flex items-center gap-2">
+            <Webhook className="w-4 h-4 text-primary" /> Webhook Notifications
+          </h3>
+          <div className="space-y-2">
+            <label className="text-sm font-medium text-white/80">Webhook URL</label>
+            <input {...form.register("webhookUrl")} className="w-full bg-black/40 border border-white/10 rounded-xl px-4 py-2.5 text-white focus:outline-none focus:ring-2 focus:ring-primary transition-all" placeholder="https://hooks.slack.com/..." />
+            {form.formState.errors.webhookUrl && <p className="text-red-400 text-xs">{String(form.formState.errors.webhookUrl.message)}</p>}
+            <p className="text-xs text-muted-foreground">Agents with the "Send Webhook" tool will POST JSON payloads to this URL.</p>
+          </div>
         </div>
 
         <div className="flex justify-end pt-2">

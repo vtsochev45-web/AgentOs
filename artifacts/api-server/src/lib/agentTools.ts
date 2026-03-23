@@ -1,8 +1,8 @@
 import path from "path";
 import os from "os";
 import { db } from "@workspace/db";
-import { activityLogTable, agentsTable, agentMessagesTable, appSettingsTable } from "@workspace/db";
-import { eq } from "drizzle-orm";
+import { activityLogTable, agentsTable, agentMessagesTable, agentFilesTable, appSettingsTable } from "@workspace/db";
+import { eq, and } from "drizzle-orm";
 import { execWithCreds } from "./sshManager";
 import { emitActivity } from "./activityEmitter";
 import { decrypt } from "./encryption";
@@ -169,19 +169,20 @@ export async function fileReadTool(
   agentName: string,
   filePath: string
 ): Promise<ToolResult> {
-  const fs = await import("fs/promises");
+  const normalizedPath = filePath.replace(/^\/+/, "").replace(/\.\.\//g, "");
+  if (!normalizedPath) return { success: false, output: "", error: "Invalid file path" };
 
-  const sandboxDir = path.resolve(process.cwd(), "agent-files", String(agentId));
-  await fs.mkdir(sandboxDir, { recursive: true });
-
-  const safePath = resolveSandboxPath(sandboxDir, filePath);
-  if (!safePath) return { success: false, output: "", error: "Access denied: path outside sandbox" };
-
-  await logActivity(agentId, agentName, "file_read", `Reading: ${filePath}`);
+  await logActivity(agentId, agentName, "file_read", `Reading: ${normalizedPath}`);
 
   try {
-    const content = await fs.readFile(safePath, "utf8");
-    return { success: true, output: content };
+    const [file] = await db
+      .select()
+      .from(agentFilesTable)
+      .where(and(eq(agentFilesTable.agentId, agentId), eq(agentFilesTable.path, normalizedPath)))
+      .limit(1);
+
+    if (!file) return { success: false, output: "", error: `File not found: ${normalizedPath}` };
+    return { success: true, output: file.content };
   } catch (err) {
     const error = err instanceof Error ? err.message : String(err);
     return { success: false, output: "", error };
@@ -194,39 +195,37 @@ export async function fileWriteTool(
   filePath: string,
   content: string
 ): Promise<ToolResult> {
-  const fs = await import("fs/promises");
+  const normalizedPath = filePath.replace(/^\/+/, "").replace(/\.\.\//g, "");
+  if (!normalizedPath) return { success: false, output: "", error: "Invalid file path" };
 
-  const sandboxDir = path.resolve(process.cwd(), "agent-files", String(agentId));
-  await fs.mkdir(sandboxDir, { recursive: true });
-
-  const safePath = resolveSandboxPath(sandboxDir, filePath);
-  if (!safePath) return { success: false, output: "", error: "Access denied: path outside sandbox" };
-
-  await logActivity(agentId, agentName, "file_write", `Writing: ${filePath}`);
+  await logActivity(agentId, agentName, "file_write", `Writing: ${normalizedPath}`);
 
   try {
-    await fs.mkdir(path.dirname(safePath), { recursive: true });
-    await fs.writeFile(safePath, content, "utf8");
-    return { success: true, output: `Written ${content.length} chars to ${filePath}` };
+    await db
+      .insert(agentFilesTable)
+      .values({ agentId, path: normalizedPath, content, updatedAt: new Date() })
+      .onConflictDoUpdate({
+        target: [agentFilesTable.agentId, agentFilesTable.path],
+        set: { content, updatedAt: new Date() },
+      });
+
+    return { success: true, output: `Written ${content.length} chars to ${normalizedPath}` };
   } catch (err) {
     const error = err instanceof Error ? err.message : String(err);
     return { success: false, output: "", error };
   }
 }
 
-export async function fileListTool(agentId: number, agentName: string, dir = ""): Promise<ToolResult> {
-  const fs = await import("fs/promises");
-
-  const sandboxDir = path.resolve(process.cwd(), "agent-files", String(agentId));
-  await fs.mkdir(sandboxDir, { recursive: true });
-
-  const safeDir = dir ? resolveSandboxPath(sandboxDir, dir) : sandboxDir;
-  if (!safeDir) return { success: false, output: "", error: "Access denied: path outside sandbox" };
-
+export async function fileListTool(agentId: number, agentName: string, _dir = ""): Promise<ToolResult> {
   try {
-    const entries = await fs.readdir(safeDir, { withFileTypes: true });
-    const list = entries.map((e) => `${e.isDirectory() ? "[dir]" : "[file]"} ${e.name}`).join("\n");
-    return { success: true, output: list || "(empty)" };
+    const files = await db
+      .select({ path: agentFilesTable.path, updatedAt: agentFilesTable.updatedAt })
+      .from(agentFilesTable)
+      .where(eq(agentFilesTable.agentId, agentId));
+
+    if (files.length === 0) return { success: true, output: "(no files)" };
+    const list = files.map((f) => `${f.path}  (updated: ${f.updatedAt.toISOString()})`).join("\n");
+    return { success: true, output: list };
   } catch (err) {
     const error = err instanceof Error ? err.message : String(err);
     return { success: false, output: "", error };

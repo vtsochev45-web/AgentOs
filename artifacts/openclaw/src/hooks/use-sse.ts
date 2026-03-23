@@ -108,7 +108,8 @@ export function useSSEActivity() {
 
     es.onmessage = (e: MessageEvent<string>) => {
       try {
-        const parsed = JSON.parse(e.data) as ActivityEvent;
+        const parsed = JSON.parse(e.data) as ActivityEvent & { type?: string };
+        if (parsed.type === "connected" || !parsed.actionType) return;
         setEvents((prev) => [parsed, ...prev].slice(0, 100));
       } catch (err) {
         console.error("Failed to parse activity event", err);
@@ -155,7 +156,8 @@ export function useSSEAgentStatus(onStatusChange: (ev: AgentStatusEvent) => void
 
     es.onmessage = (e: MessageEvent<string>) => {
       try {
-        const parsed = JSON.parse(e.data) as AgentStatusEvent;
+        const parsed = JSON.parse(e.data) as AgentStatusEvent & { type?: string };
+        if (parsed.type === "connected" || !parsed.agentId) return;
         onStatusChangeRef.current(parsed);
       } catch (err) {
         console.error("Failed to parse agent status event", err);

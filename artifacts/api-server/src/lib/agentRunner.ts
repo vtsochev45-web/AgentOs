@@ -1,9 +1,15 @@
 import { openai } from "@workspace/integrations-openai-ai-server";
 
+type ToolCallDef = {
+  id: string;
+  type: "function";
+  function: { name: string; arguments: string };
+};
+
 type ChatMsg =
   | { role: "system"; content: string }
   | { role: "user"; content: string }
-  | { role: "assistant"; content: string }
+  | { role: "assistant"; content: string; tool_calls?: ToolCallDef[] }
   | { role: "tool"; content: string; tool_call_id: string };
 import { db } from "@workspace/db";
 import {
@@ -137,7 +143,7 @@ Format your response as:
       const msg = choice.message;
 
       if (msg.tool_calls && msg.tool_calls.length > 0) {
-        messages.push({ role: "assistant" as const, content: msg.content ?? "" });
+        messages.push({ role: "assistant" as const, content: msg.content ?? "", tool_calls: msg.tool_calls } as ChatMsg);
 
         for (const toolCall of msg.tool_calls) {
           const tc = toolCall as { id: string; type: "function"; function: { name: string; arguments: string } };
@@ -503,7 +509,7 @@ Provide a clear, well-structured answer. End your response naturally.`,
       const msg = choice.message;
 
       if (msg.tool_calls && msg.tool_calls.length > 0) {
-        messages.push({ role: "assistant" as const, content: msg.content ?? "" });
+        messages.push({ role: "assistant" as const, content: msg.content ?? "", tool_calls: msg.tool_calls } as ChatMsg);
 
         for (const toolCall of msg.tool_calls) {
           const tc = toolCall as { id: string; type: "function"; function: { name: string; arguments: string } };
