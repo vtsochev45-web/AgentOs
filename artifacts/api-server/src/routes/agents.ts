@@ -31,6 +31,22 @@ router.post("/agents", async (req, res): Promise<void> => {
   res.status(201).json(agent);
 });
 
+router.get("/agents/stream", async (req, res): Promise<void> => {
+  res.setHeader("Content-Type", "text/event-stream");
+  res.setHeader("Cache-Control", "no-cache");
+  res.setHeader("Connection", "keep-alive");
+  res.write("data: {\"type\":\"connected\"}\n\n");
+
+  const onStatus = (event: { agentId: number; status: string }) => {
+    if (!res.writableEnded) {
+      res.write(`data: ${JSON.stringify({ type: "status", ...event })}\n\n`);
+    }
+  };
+
+  agentStatusEmitter.on("status", onStatus);
+  req.on("close", () => agentStatusEmitter.off("status", onStatus));
+});
+
 router.get("/agents/:id", async (req, res): Promise<void> => {
   const id = parseInt(Array.isArray(req.params.id) ? req.params.id[0]! : req.params.id, 10);
   const [agent] = await db.select().from(agentsTable).where(eq(agentsTable.id, id));
@@ -64,20 +80,6 @@ router.patch("/agents/:id/status", async (req, res): Promise<void> => {
   const [agent] = await db.update(agentsTable).set({ status, lastActiveAt: new Date() }).where(eq(agentsTable.id, id)).returning();
   if (!agent) { res.status(404).json({ error: "Agent not found" }); return; }
   res.json(agent);
-});
-
-router.get("/agents/stream", async (req, res): Promise<void> => {
-  res.setHeader("Content-Type", "text/event-stream");
-  res.setHeader("Cache-Control", "no-cache");
-  res.setHeader("Connection", "keep-alive");
-  res.write("data: {\"type\":\"connected\"}\n\n");
-
-  const onStatus = (event: { agentId: number; status: string }) => {
-    res.write(`data: ${JSON.stringify({ type: "status", ...event })}\n\n`);
-  };
-
-  agentStatusEmitter.on("status", onStatus);
-  req.on("close", () => agentStatusEmitter.off("status", onStatus));
 });
 
 // Agent conversations
@@ -155,6 +157,51 @@ router.post("/agents/:id/messages", async (req, res): Promise<void> => {
   });
 
   res.status(201).json(msg);
+
+  if (toAgent) {
+    const delegationPrompt = `[DELEGATION from ${fromAgent?.name ?? "Agent"} #${fromAgentId}]: ${content}`;
+    setImmediate(async () => {
+      try {
+        const { Writable } = await import("stream");
+        const sink = new Writable({ write(_chunk, _enc, cb) { cb(); } });
+        Object.assign(sink, {
+          setHeader: () => {},
+          writableEnded: false,
+          write(chunk: unknown) {
+            (this as unknown as { writableEnded: boolean }).writableEnded = false;
+            return true;
+          },
+          end() {
+            (this as unknown as { writableEnded: boolean }).writableEnded = true;
+          },
+        });
+        const fakeRes = sink as unknown as import("express").Response;
+        await runAgentChat(toAgent.id, delegationPrompt, null, fakeRes);
+      } catch {}
+    });
+  }
+});
+
+// Network edges — real agent message pairs for graph visualization
+router.get("/network/edges", async (req, res): Promise<void> => {
+  const msgs = await db
+    .select()
+    .from(agentMessagesTable)
+    .orderBy(desc(agentMessagesTable.timestamp))
+    .limit(200);
+
+  const edgeMap = new Map<string, { source: number; target: number; count: number }>();
+  for (const msg of msgs) {
+    const key = `${msg.fromAgentId}-${msg.toAgentId}`;
+    const existing = edgeMap.get(key);
+    if (existing) {
+      existing.count++;
+    } else {
+      edgeMap.set(key, { source: msg.fromAgentId, target: msg.toAgentId, count: 1 });
+    }
+  }
+
+  res.json(Array.from(edgeMap.values()));
 });
 
 export default router;

@@ -147,6 +147,17 @@ export async function vpsShellTool(
   }
 }
 
+function resolveSandboxPath(sandboxDir: string, userPath: string): string | null {
+  const pathModule = require("path") as typeof import("path");
+  const normalized = userPath.replace(/^\/+/, "");
+  const resolved = pathModule.resolve(sandboxDir, normalized);
+  const sandboxResolved = pathModule.resolve(sandboxDir);
+  if (resolved !== sandboxResolved && !resolved.startsWith(sandboxResolved + pathModule.sep)) {
+    return null;
+  }
+  return resolved;
+}
+
 export async function fileReadTool(
   agentId: number,
   agentName: string,
@@ -155,9 +166,11 @@ export async function fileReadTool(
   const fs = await import("fs/promises");
   const path = await import("path");
 
-  const sandboxDir = path.join(process.cwd(), "agent-files", String(agentId));
+  const sandboxDir = path.resolve(process.cwd(), "agent-files", String(agentId));
   await fs.mkdir(sandboxDir, { recursive: true });
-  const safePath = path.join(sandboxDir, filePath.replace(/\.\./g, ""));
+
+  const safePath = resolveSandboxPath(sandboxDir, filePath);
+  if (!safePath) return { success: false, output: "", error: "Access denied: path outside sandbox" };
 
   await logActivity(agentId, agentName, "file_read", `Reading: ${filePath}`);
 
@@ -179,9 +192,11 @@ export async function fileWriteTool(
   const fs = await import("fs/promises");
   const path = await import("path");
 
-  const sandboxDir = path.join(process.cwd(), "agent-files", String(agentId));
+  const sandboxDir = path.resolve(process.cwd(), "agent-files", String(agentId));
   await fs.mkdir(sandboxDir, { recursive: true });
-  const safePath = path.join(sandboxDir, filePath.replace(/\.\./g, ""));
+
+  const safePath = resolveSandboxPath(sandboxDir, filePath);
+  if (!safePath) return { success: false, output: "", error: "Access denied: path outside sandbox" };
 
   await logActivity(agentId, agentName, "file_write", `Writing: ${filePath}`);
 
@@ -195,18 +210,20 @@ export async function fileWriteTool(
   }
 }
 
-export async function fileListTool(agentId: number, agentName: string, dir = "/"): Promise<ToolResult> {
+export async function fileListTool(agentId: number, agentName: string, dir = ""): Promise<ToolResult> {
   const fs = await import("fs/promises");
   const path = await import("path");
 
-  const sandboxDir = path.join(process.cwd(), "agent-files", String(agentId));
+  const sandboxDir = path.resolve(process.cwd(), "agent-files", String(agentId));
   await fs.mkdir(sandboxDir, { recursive: true });
-  const safeDir = path.join(sandboxDir, dir.replace(/\.\./g, ""));
+
+  const safeDir = dir ? resolveSandboxPath(sandboxDir, dir) : sandboxDir;
+  if (!safeDir) return { success: false, output: "", error: "Access denied: path outside sandbox" };
 
   try {
     const entries = await fs.readdir(safeDir, { withFileTypes: true });
     const list = entries.map((e) => `${e.isDirectory() ? "[dir]" : "[file]"} ${e.name}`).join("\n");
-    return { success: true, output: list };
+    return { success: true, output: list || "(empty)" };
   } catch (err) {
     const error = err instanceof Error ? err.message : String(err);
     return { success: false, output: "", error };

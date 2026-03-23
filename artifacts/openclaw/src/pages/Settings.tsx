@@ -2,7 +2,7 @@ import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
 import { useGetSettings, useSaveSettings, useGetVpsConfig, useSaveVpsConfig } from "@workspace/api-client-react";
-import { Settings as SettingsIcon, Server, Shield, Brain, Mail, Save } from "lucide-react";
+import { Settings as SettingsIcon, Server, Brain, Mail, Save, Search } from "lucide-react";
 import { useQueryClient } from "@tanstack/react-query";
 import { useToast } from "@/hooks/use-toast";
 
@@ -12,15 +12,24 @@ const vpsSchema = z.object({
   port: z.coerce.number().min(1),
   authType: z.enum(["password", "key"]),
   password: z.string().optional(),
-  privateKey: z.string().optional()
+  privateKey: z.string().optional(),
+});
+
+const globalSchema = z.object({
+  smtpHost: z.string().optional(),
+  smtpPort: z.coerce.number().optional(),
+  smtpUser: z.string().optional(),
+  smtpPassword: z.string().optional(),
+  searchProvider: z.enum(["duckduckgo", "brave"]).optional(),
+  braveApiKey: z.string().optional(),
 });
 
 export default function Settings() {
   const { data: vpsConfig } = useGetVpsConfig();
   const { data: settings } = useGetSettings();
-  
+
   return (
-    <div className="max-w-4xl mx-auto h-full pb-10">
+    <div className="max-w-4xl mx-auto h-full overflow-y-auto custom-scrollbar pb-10">
       <header className="mb-8">
         <h1 className="text-3xl font-bold text-white tracking-tight flex items-center gap-3">
           <SettingsIcon className="w-8 h-8 text-primary" />
@@ -30,14 +39,14 @@ export default function Settings() {
       </header>
 
       <div className="space-y-8">
-         <VpsConfigForm initialData={vpsConfig} />
-         <GlobalConfigForm initialData={settings} />
+        <VpsConfigForm initialData={vpsConfig} />
+        <GlobalConfigForm initialData={settings} />
       </div>
     </div>
   );
 }
 
-function VpsConfigForm({ initialData }: { initialData?: any }) {
+function VpsConfigForm({ initialData }: { initialData?: Record<string, unknown> }) {
   const mutation = useSaveVpsConfig();
   const { toast } = useToast();
   const queryClient = useQueryClient();
@@ -45,87 +54,173 @@ function VpsConfigForm({ initialData }: { initialData?: any }) {
   const form = useForm({
     resolver: zodResolver(vpsSchema),
     values: {
-      host: initialData?.host || "",
-      username: initialData?.username || "root",
-      port: initialData?.port || 22,
-      authType: initialData?.authType || "password",
+      host: String(initialData?.host ?? ""),
+      username: String(initialData?.username ?? "root"),
+      port: Number(initialData?.port ?? 22),
+      authType: (initialData?.authType as "password" | "key") ?? "password",
       password: "",
-      privateKey: ""
-    }
+      privateKey: "",
+    },
   });
 
-  const onSubmit = (data: any) => {
-    mutation.mutate({ data: { ...data, label: "Primary VPS" } }, {
+  const onSubmit = (data: z.infer<typeof vpsSchema>) => {
+    mutation.mutate({ data: { ...data, label: "Primary VPS" } as Parameters<typeof mutation.mutate>[0]["data"] }, {
       onSuccess: () => {
         toast({ title: "VPS Configuration Saved", description: "SSH uplink credentials stored securely." });
         queryClient.invalidateQueries({ queryKey: ["/api/vps/config"] });
-      }
+      },
+      onError: (err) => {
+        toast({ title: "Save Failed", description: err.message, variant: "destructive" });
+      },
     });
   };
 
   return (
     <div className="glass-panel rounded-2xl overflow-hidden">
       <div className="p-5 border-b border-white/10 bg-white/5 flex items-center gap-3">
-         <Server className="w-5 h-5 text-primary" />
-         <h2 className="text-xl font-bold text-white">VPS SSH Uplink</h2>
+        <Server className="w-5 h-5 text-primary" />
+        <h2 className="text-xl font-bold text-white">VPS SSH Uplink</h2>
+        {initialData?.hasCredentials && (
+          <span className="ml-auto text-xs font-mono text-green-400 bg-green-400/10 px-2 py-1 rounded-full border border-green-400/20">CONFIGURED</span>
+        )}
       </div>
       <form onSubmit={form.handleSubmit(onSubmit)} className="p-6 space-y-6">
-         <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+          <div className="space-y-2">
+            <label className="text-sm font-medium text-white/80">Hostname / IP</label>
+            <input {...form.register("host")} className="w-full bg-black/40 border border-white/10 rounded-xl px-4 py-2.5 text-white focus:outline-none focus:ring-2 focus:ring-primary focus:border-transparent transition-all" placeholder="e.g. 192.168.1.1" />
+            {form.formState.errors.host && <p className="text-red-400 text-xs">{form.formState.errors.host.message}</p>}
+          </div>
+          <div className="grid grid-cols-2 gap-4">
             <div className="space-y-2">
-              <label className="text-sm font-medium text-white/80">Hostname / IP</label>
-              <input {...form.register("host")} className="w-full bg-black/40 border border-white/10 rounded-xl px-4 py-2.5 text-white focus:ring-2 focus:ring-primary" placeholder="e.g. 192.168.1.1" />
-            </div>
-            <div className="grid grid-cols-2 gap-4">
-              <div className="space-y-2">
-                <label className="text-sm font-medium text-white/80">Username</label>
-                <input {...form.register("username")} className="w-full bg-black/40 border border-white/10 rounded-xl px-4 py-2.5 text-white focus:ring-2 focus:ring-primary" />
-              </div>
-              <div className="space-y-2">
-                <label className="text-sm font-medium text-white/80">Port</label>
-                <input type="number" {...form.register("port")} className="w-full bg-black/40 border border-white/10 rounded-xl px-4 py-2.5 text-white focus:ring-2 focus:ring-primary" />
-              </div>
+              <label className="text-sm font-medium text-white/80">Username</label>
+              <input {...form.register("username")} className="w-full bg-black/40 border border-white/10 rounded-xl px-4 py-2.5 text-white focus:outline-none focus:ring-2 focus:ring-primary transition-all" />
             </div>
             <div className="space-y-2">
-              <label className="text-sm font-medium text-white/80">Authentication Method</label>
-              <select {...form.register("authType")} className="w-full bg-black/40 border border-white/10 rounded-xl px-4 py-2.5 text-white focus:ring-2 focus:ring-primary">
-                 <option value="password">Password</option>
-                 <option value="key">Private Key</option>
-              </select>
+              <label className="text-sm font-medium text-white/80">Port</label>
+              <input type="number" {...form.register("port")} className="w-full bg-black/40 border border-white/10 rounded-xl px-4 py-2.5 text-white focus:outline-none focus:ring-2 focus:ring-primary transition-all" />
             </div>
-            
-            {form.watch("authType") === "password" ? (
-               <div className="space-y-2">
-                 <label className="text-sm font-medium text-white/80">Password {initialData?.hasCredentials && '(Leave blank to keep existing)'}</label>
-                 <input type="password" {...form.register("password")} className="w-full bg-black/40 border border-white/10 rounded-xl px-4 py-2.5 text-white focus:ring-2 focus:ring-primary" />
-               </div>
-            ) : (
-               <div className="space-y-2 md:col-span-2">
-                 <label className="text-sm font-medium text-white/80">RSA Private Key</label>
-                 <textarea {...form.register("privateKey")} rows={4} className="w-full bg-black/40 border border-white/10 rounded-xl px-4 py-2.5 text-white focus:ring-2 focus:ring-primary font-mono text-xs" placeholder="-----BEGIN RSA PRIVATE KEY-----..." />
-               </div>
-            )}
-         </div>
-         <div className="flex justify-end pt-4">
-            <button type="submit" disabled={mutation.isPending} className="bg-primary hover:bg-primary/90 text-primary-foreground px-6 py-2.5 rounded-xl font-semibold shadow-lg shadow-primary/20 flex items-center gap-2">
-               <Save className="w-4 h-4" /> {mutation.isPending ? 'Saving...' : 'Save Configuration'}
-            </button>
-         </div>
+          </div>
+          <div className="space-y-2">
+            <label className="text-sm font-medium text-white/80">Authentication Method</label>
+            <select {...form.register("authType")} className="w-full bg-black/40 border border-white/10 rounded-xl px-4 py-2.5 text-white focus:outline-none focus:ring-2 focus:ring-primary transition-all">
+              <option value="password">Password</option>
+              <option value="key">Private Key</option>
+            </select>
+          </div>
+
+          {form.watch("authType") === "password" ? (
+            <div className="space-y-2">
+              <label className="text-sm font-medium text-white/80">
+                Password {initialData?.hasCredentials && <span className="text-muted-foreground">(blank = keep existing)</span>}
+              </label>
+              <input type="password" autoComplete="current-password" {...form.register("password")} className="w-full bg-black/40 border border-white/10 rounded-xl px-4 py-2.5 text-white focus:outline-none focus:ring-2 focus:ring-primary transition-all" />
+            </div>
+          ) : (
+            <div className="space-y-2 md:col-span-2">
+              <label className="text-sm font-medium text-white/80">RSA Private Key</label>
+              <textarea {...form.register("privateKey")} rows={4} className="w-full bg-black/40 border border-white/10 rounded-xl px-4 py-2.5 text-white focus:outline-none focus:ring-2 focus:ring-primary font-mono text-xs resize-none transition-all" placeholder="-----BEGIN RSA PRIVATE KEY-----..." />
+            </div>
+          )}
+        </div>
+        <div className="flex justify-end pt-4">
+          <button type="submit" disabled={mutation.isPending} className="bg-primary hover:bg-primary/90 text-primary-foreground px-6 py-2.5 rounded-xl font-semibold shadow-lg shadow-primary/20 flex items-center gap-2 disabled:opacity-60 transition-all">
+            <Save className="w-4 h-4" /> {mutation.isPending ? "Saving..." : "Save Configuration"}
+          </button>
+        </div>
       </form>
     </div>
   );
 }
 
-function GlobalConfigForm({ initialData }: { initialData?: any }) {
-  // Simplified for completeness
+function GlobalConfigForm({ initialData }: { initialData?: Record<string, unknown> }) {
+  const mutation = useSaveSettings();
+  const { toast } = useToast();
+  const queryClient = useQueryClient();
+
+  const form = useForm({
+    resolver: zodResolver(globalSchema),
+    values: {
+      smtpHost: String(initialData?.smtpHost ?? ""),
+      smtpPort: Number(initialData?.smtpPort ?? 587),
+      smtpUser: String(initialData?.smtpUser ?? ""),
+      smtpPassword: String(initialData?.smtpPassword ?? ""),
+      searchProvider: (initialData?.searchProvider as "duckduckgo" | "brave") ?? "duckduckgo",
+      braveApiKey: String(initialData?.braveApiKey ?? ""),
+    },
+  });
+
+  const onSubmit = (data: z.infer<typeof globalSchema>) => {
+    mutation.mutate({ data: data as Parameters<typeof mutation.mutate>[0]["data"] }, {
+      onSuccess: () => {
+        toast({ title: "Settings Saved", description: "Global configuration updated." });
+        queryClient.invalidateQueries({ queryKey: ["/api/settings"] });
+      },
+      onError: (err) => {
+        toast({ title: "Save Failed", description: err.message, variant: "destructive" });
+      },
+    });
+  };
+
   return (
-    <div className="glass-panel rounded-2xl overflow-hidden opacity-50 pointer-events-none">
-       <div className="p-5 border-b border-white/10 bg-white/5 flex items-center gap-3">
-         <Brain className="w-5 h-5 text-accent" />
-         <h2 className="text-xl font-bold text-white">Global Intelligence (Coming Soon)</h2>
-       </div>
-       <div className="p-6">
-         <p className="text-muted-foreground">AI Provider and Model settings are automatically managed by Replit AI Integrations in this version.</p>
-       </div>
+    <div className="glass-panel rounded-2xl overflow-hidden">
+      <div className="p-5 border-b border-white/10 bg-white/5 flex items-center gap-3">
+        <Brain className="w-5 h-5 text-accent" />
+        <h2 className="text-xl font-bold text-white">Intelligence & Integrations</h2>
+      </div>
+      <form onSubmit={form.handleSubmit(onSubmit)} className="p-6 space-y-8">
+        <div>
+          <h3 className="text-base font-semibold text-white mb-4 flex items-center gap-2">
+            <Search className="w-4 h-4 text-primary" /> Web Search Provider
+          </h3>
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+            <div className="space-y-2">
+              <label className="text-sm font-medium text-white/80">Provider</label>
+              <select {...form.register("searchProvider")} className="w-full bg-black/40 border border-white/10 rounded-xl px-4 py-2.5 text-white focus:outline-none focus:ring-2 focus:ring-primary transition-all">
+                <option value="duckduckgo">DuckDuckGo (free)</option>
+                <option value="brave">Brave Search (API key required)</option>
+              </select>
+            </div>
+            {form.watch("searchProvider") === "brave" && (
+              <div className="space-y-2">
+                <label className="text-sm font-medium text-white/80">Brave API Key</label>
+                <input {...form.register("braveApiKey")} className="w-full bg-black/40 border border-white/10 rounded-xl px-4 py-2.5 text-white focus:outline-none focus:ring-2 focus:ring-primary transition-all" placeholder="BSA..." />
+              </div>
+            )}
+          </div>
+        </div>
+
+        <div>
+          <h3 className="text-base font-semibold text-white mb-4 flex items-center gap-2">
+            <Mail className="w-4 h-4 text-primary" /> Email / SMTP
+          </h3>
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+            <div className="space-y-2">
+              <label className="text-sm font-medium text-white/80">SMTP Host</label>
+              <input {...form.register("smtpHost")} className="w-full bg-black/40 border border-white/10 rounded-xl px-4 py-2.5 text-white focus:outline-none focus:ring-2 focus:ring-primary transition-all" placeholder="smtp.gmail.com" />
+            </div>
+            <div className="space-y-2">
+              <label className="text-sm font-medium text-white/80">SMTP Port</label>
+              <input type="number" {...form.register("smtpPort")} className="w-full bg-black/40 border border-white/10 rounded-xl px-4 py-2.5 text-white focus:outline-none focus:ring-2 focus:ring-primary transition-all" />
+            </div>
+            <div className="space-y-2">
+              <label className="text-sm font-medium text-white/80">SMTP Username</label>
+              <input {...form.register("smtpUser")} className="w-full bg-black/40 border border-white/10 rounded-xl px-4 py-2.5 text-white focus:outline-none focus:ring-2 focus:ring-primary transition-all" placeholder="you@gmail.com" />
+            </div>
+            <div className="space-y-2">
+              <label className="text-sm font-medium text-white/80">SMTP Password / App Password</label>
+              <input type="password" autoComplete="new-password" {...form.register("smtpPassword")} className="w-full bg-black/40 border border-white/10 rounded-xl px-4 py-2.5 text-white focus:outline-none focus:ring-2 focus:ring-primary transition-all" />
+            </div>
+          </div>
+          <p className="text-xs text-muted-foreground mt-2">Used by agents with the "Messaging" tool to send emails on your behalf.</p>
+        </div>
+
+        <div className="flex justify-end pt-2">
+          <button type="submit" disabled={mutation.isPending} className="bg-primary hover:bg-primary/90 text-primary-foreground px-6 py-2.5 rounded-xl font-semibold shadow-lg shadow-primary/20 flex items-center gap-2 disabled:opacity-60 transition-all">
+            <Save className="w-4 h-4" /> {mutation.isPending ? "Saving..." : "Save Settings"}
+          </button>
+        </div>
+      </form>
     </div>
   );
 }

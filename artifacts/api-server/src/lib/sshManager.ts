@@ -263,6 +263,55 @@ export async function sftpListDir(creds: SshCredentials, remotePath: string): Pr
   });
 }
 
+export async function execStreaming(
+  creds: SshCredentials,
+  command: string,
+  onData: (chunk: string) => void
+): Promise<() => void> {
+  const client = new Client();
+
+  return new Promise((resolve, reject) => {
+    const config: ConnectConfig = {
+      host: creds.host,
+      port: creds.port,
+      username: creds.username,
+      readyTimeout: 15000,
+    };
+
+    if (creds.authType === "password" && creds.password) {
+      config.password = creds.password;
+    } else if (creds.authType === "key" && creds.privateKey) {
+      config.privateKey = creds.privateKey;
+    }
+
+    client
+      .on("ready", () => {
+        client.exec(command, (err, stream) => {
+          if (err) {
+            client.end();
+            reject(err);
+            return;
+          }
+
+          stream
+            .on("data", (data: Buffer) => { onData(data.toString()); })
+            .stderr.on("data", (data: Buffer) => { onData(data.toString()); });
+
+          stream.on("close", () => { client.end(); });
+
+          const stop = () => {
+            try { stream.destroy(); } catch {}
+            try { client.end(); } catch {}
+          };
+
+          resolve(stop);
+        });
+      })
+      .on("error", reject)
+      .connect(config);
+  });
+}
+
 export function disconnect(id: number): void {
   const session = sessions.get(id);
   if (session) {

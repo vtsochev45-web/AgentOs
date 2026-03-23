@@ -1,5 +1,5 @@
 import { useListActivity } from "@workspace/api-client-react";
-import { ActivitySquare, CheckCircle2, Terminal, Globe, FileCode2, MessageSquare, ShieldAlert } from "lucide-react";
+import { Activity as ActivityIcon, CheckCircle2, Terminal, Globe, FileCode2, MessageSquare, ShieldAlert } from "lucide-react";
 import { format } from "date-fns";
 
 export default function Activity() {
@@ -20,7 +20,7 @@ export default function Activity() {
     <div className="max-w-4xl mx-auto h-full flex flex-col">
       <header className="mb-8 shrink-0">
         <h1 className="text-3xl font-bold text-white tracking-tight flex items-center gap-3">
-          <ActivitySquare className="w-8 h-8 text-primary" />
+          <ActivityIcon className="w-8 h-8 text-primary" />
           Global Telemetry
         </h1>
         <p className="text-muted-foreground mt-2 text-sm">Real-time log of all system and agent operations.</p>

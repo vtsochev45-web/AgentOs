@@ -1,7 +1,9 @@
-import { AgentStatus } from "@/lib/api-client-react/src/generated/api.schemas";
+import type { Agent } from "@workspace/api-client-react";
+
+type AgentStatus = Agent["status"];
 
 export function AgentStatusBadge({ status }: { status: AgentStatus }) {
-  const config = {
+  const config: Record<string, { color: string; glow: string; label: string }> = {
     idle: { color: "bg-gray-500", glow: "status-glow-idle", label: "Idle" },
     thinking: { color: "bg-blue-500", glow: "status-glow-thinking animate-pulse-fast", label: "Thinking" },
     searching: { color: "bg-yellow-500", glow: "status-glow-searching animate-pulse-fast", label: "Searching" },
@@ -10,7 +12,7 @@ export function AgentStatusBadge({ status }: { status: AgentStatus }) {
     executing: { color: "bg-red-500", glow: "status-glow-executing animate-pulse-fast", label: "Executing" },
   };
 
-  const current = config[status] || config.idle;
+  const current = (status && config[status]) ? config[status] : config["idle"]!;
 
   return (
     <div className="flex items-center gap-2 px-2.5 py-1 rounded-full bg-white/5 border border-white/10 w-fit">

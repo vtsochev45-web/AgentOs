@@ -2,7 +2,7 @@ import { Router, type IRouter } from "express";
 import { db } from "@workspace/db";
 import { vpsConfigTable } from "@workspace/db";
 import { encrypt, decrypt } from "../lib/encryption";
-import { execWithCreds, sftpReadFile, sftpWriteFile, sftpListDir } from "../lib/sshManager";
+import { execWithCreds, execStreaming, sftpReadFile, sftpWriteFile, sftpListDir } from "../lib/sshManager";
 import { eq } from "drizzle-orm";
 import { emitActivity } from "../lib/activityEmitter";
 
@@ -301,18 +301,33 @@ router.get("/vps/logs", async (req, res): Promise<void> => {
   res.setHeader("Cache-Control", "no-cache");
   res.setHeader("Connection", "keep-alive");
 
-  try {
-    const { stdout } = await execWithCreds(creds, `tail -n ${lines} "${logPath}" 2>&1`, 15000);
-    const logLines = stdout.split("\n");
-    for (const line of logLines) {
-      if (line) res.write(`data: ${JSON.stringify({ line })}\n\n`);
-    }
-  } catch (err) {
-    res.write(`data: ${JSON.stringify({ error: err instanceof Error ? err.message : String(err) })}\n\n`);
-  }
+  let stopStream: (() => void) | null = null;
 
-  res.write(`data: ${JSON.stringify({ done: true })}\n\n`);
-  res.end();
+  const cleanup = () => {
+    if (stopStream) {
+      stopStream();
+      stopStream = null;
+    }
+  };
+
+  req.on("close", cleanup);
+
+  try {
+    const command = `tail -n ${lines} -f "${logPath}" 2>&1`;
+    stopStream = await execStreaming(creds, command, (chunk) => {
+      const logLines = chunk.split("\n");
+      for (const line of logLines) {
+        if (line.trim() && !res.writableEnded) {
+          res.write(`data: ${JSON.stringify({ line })}\n\n`);
+        }
+      }
+    });
+  } catch (err) {
+    if (!res.writableEnded) {
+      res.write(`data: ${JSON.stringify({ error: err instanceof Error ? err.message : String(err) })}\n\n`);
+      res.end();
+    }
+  }
 });
 
 export default router;
