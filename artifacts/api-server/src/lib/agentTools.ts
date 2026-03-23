@@ -3,7 +3,7 @@ import os from "os";
 import { db } from "@workspace/db";
 import { activityLogTable, agentsTable, agentMessagesTable, agentFilesTable, appSettingsTable } from "@workspace/db";
 import { eq, and } from "drizzle-orm";
-import { execWithCreds } from "./sshManager";
+import { exec as sshExec } from "./sshManager";
 import { emitActivity } from "./activityEmitter";
 import { decrypt } from "./encryption";
 
@@ -30,6 +30,7 @@ async function getVpsCredentials() {
 
   const cred = decrypt(vps.encryptedCredential);
   return {
+    id: vps.id,
     host: vps.host,
     port: vps.port,
     username: vps.username,
@@ -143,7 +144,7 @@ export async function vpsShellTool(
   }
 
   try {
-    const result = await execWithCreds(creds, command, 30000);
+    const result = await sshExec(creds.id, creds, command, 30000);
     return {
       success: result.exitCode === 0,
       output: result.stdout + result.stderr,

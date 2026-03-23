@@ -5,6 +5,7 @@ import { encrypt, decrypt } from "../lib/encryption";
 import { exec, execStreaming, sftpReadFileById, sftpWriteFileById, sftpListDirById, sftpUnlinkById, sftpReadFileBuffer, type SshCredentials } from "../lib/sshManager";
 import { eq } from "drizzle-orm";
 import { persistAndEmitActivity } from "../lib/activityEmitter";
+import { requireApiKey } from "../middlewares/requireApiKey";
 
 const router: IRouter = Router();
 
@@ -140,7 +141,7 @@ router.get("/vps/processes", async (req, res): Promise<void> => {
   }
 });
 
-router.post("/vps/processes/:pid/kill", async (req, res): Promise<void> => {
+router.post("/vps/processes/:pid/kill", requireApiKey, async (req, res): Promise<void> => {
   const creds = await getVpsCreds();
   if (!creds) { res.status(404).json({ error: "VPS not configured" }); return; }
 
@@ -193,7 +194,7 @@ router.get("/vps/services", async (req, res): Promise<void> => {
   }
 });
 
-router.post("/vps/services/:name/:action", async (req, res): Promise<void> => {
+router.post("/vps/services/:name/:action", requireApiKey, async (req, res): Promise<void> => {
   const creds = await getVpsCreds();
   if (!creds) { res.status(404).json({ error: "VPS not configured" }); return; }
 
@@ -251,7 +252,7 @@ router.get("/vps/files/read", async (req, res): Promise<void> => {
   }
 });
 
-router.post("/vps/files/write", async (req, res): Promise<void> => {
+router.post("/vps/files/write", requireApiKey, async (req, res): Promise<void> => {
   const creds = await getVpsCreds();
   if (!creds) { res.status(404).json({ error: "VPS not configured" }); return; }
 
@@ -267,7 +268,7 @@ router.post("/vps/files/write", async (req, res): Promise<void> => {
   }
 });
 
-router.delete("/vps/files/delete", async (req, res): Promise<void> => {
+router.delete("/vps/files/delete", requireApiKey, async (req, res): Promise<void> => {
   const creds = await getVpsCreds();
   if (!creds) { res.status(404).json({ error: "VPS not configured" }); return; }
 
@@ -283,7 +284,7 @@ router.delete("/vps/files/delete", async (req, res): Promise<void> => {
   }
 });
 
-router.post("/vps/files/upload", async (req, res): Promise<void> => {
+router.post("/vps/files/upload", requireApiKey, async (req, res): Promise<void> => {
   const creds = await getVpsCreds();
   if (!creds) { res.status(404).json({ error: "VPS not configured" }); return; }
 
@@ -299,7 +300,7 @@ router.post("/vps/files/upload", async (req, res): Promise<void> => {
   }
 });
 
-router.post("/vps/processes/restart", async (req, res): Promise<void> => {
+router.post("/vps/processes/restart", requireApiKey, async (req, res): Promise<void> => {
   const creds = await getVpsCreds();
   if (!creds) { res.status(404).json({ error: "VPS not configured" }); return; }
 
@@ -323,7 +324,7 @@ router.post("/vps/processes/restart", async (req, res): Promise<void> => {
   }
 });
 
-router.post("/vps/exec", async (req, res): Promise<void> => {
+router.post("/vps/exec", requireApiKey, async (req, res): Promise<void> => {
   const creds = await getVpsCreds();
   if (!creds) { res.status(404).json({ error: "VPS not configured" }); return; }
 

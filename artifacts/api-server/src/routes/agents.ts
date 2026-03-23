@@ -5,6 +5,7 @@ import {
   agentConversationsTable,
   agentConversationMessagesTable,
   agentMessagesTable,
+  agentFilesTable,
   activityLogTable,
 } from "@workspace/db";
 import { eq, desc, or } from "drizzle-orm";
@@ -192,6 +193,17 @@ router.get("/network/edges", async (req, res): Promise<void> => {
   }
 
   res.json(Array.from(edgeMap.values()));
+});
+
+router.get("/agents/:id/files", async (req, res): Promise<void> => {
+  const agentId = parseInt(req.params.id, 10);
+  if (isNaN(agentId)) { res.status(400).json({ error: "Invalid agent id" }); return; }
+  const files = await db
+    .select()
+    .from(agentFilesTable)
+    .where(eq(agentFilesTable.agentId, agentId))
+    .orderBy(desc(agentFilesTable.updatedAt));
+  res.json(files);
 });
 
 export default router;
