@@ -6,6 +6,7 @@ import vpsRouter from "./vps";
 import settingsRouter from "./settings";
 import skillsRouter from "./skills";
 import openclawRouter from "./openclaw";
+import websiteRouter from "./website";
 
 const router: IRouter = Router();
 
@@ -16,5 +17,6 @@ router.use(vpsRouter);
 router.use(settingsRouter);
 router.use(skillsRouter);
 router.use(openclawRouter);
+router.use(websiteRouter);
 
 export default router;

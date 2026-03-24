@@ -71,10 +71,11 @@ Express 5 API server on port 8080. Routes at `/api/*`.
 - `src/routes/vps.ts` — VPS config, stats, processes, services, files (SFTP), exec, log tail (SSE)
 - `src/routes/activity.ts` — Activity log + SSE stream
 - `src/routes/settings.ts` — App settings (AI model, SMTP, search provider)
+- `src/routes/website.ts` — Website management per-agent: config CRUD, health check, git info, SFTP file browser/editor, build+deploy SSE streaming
 
 **Library files:**
 - `src/lib/agentRunner.ts` — OpenAI tool-calling loop with SSE streaming response
-- `src/lib/agentTools.ts` — Tool implementations: web_search, vps_shell, file_read/write/list, code_exec, send_email
+- `src/lib/agentTools.ts` — Tool implementations: web_search, vps_shell, file_read/write/list, code_exec, send_email, website_read, website_write, website_build, website_deploy, website_health
 - `src/lib/sshManager.ts` — SSH2 client for exec, SFTP read/write/list
 - `src/lib/wsTerminal.ts` — WebSocket terminal server (SSH2 shell)
 - `src/lib/activityEmitter.ts` — EventEmitter for real-time activity + agent status broadcasts
@@ -92,6 +93,7 @@ Tables (all in PostgreSQL):
 - `activity_log` — Global timestamped activity feed
 - `vps_config` — VPS SSH config with `encrypted_credential` (AES-256-GCM)
 - `app_settings` — AI model, SMTP, search provider, Brave API key
+- `website_configs` — Per-agent website config: type (vps-path|git), repo_url, branch, vps_directory, site_url, build_command, deploy_command
 
 Run migrations: `pnpm --filter @workspace/db run push`
 

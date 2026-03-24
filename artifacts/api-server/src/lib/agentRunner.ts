@@ -32,6 +32,11 @@ import {
   sendEmailTool,
   delegateToAgentTool,
   sendWebhookTool,
+  websiteReadFileTool,
+  websiteWriteFileTool,
+  websiteBuildTool,
+  websiteDeployTool,
+  websiteHealthCheckTool,
 } from "./agentTools";
 import { persistAndEmitActivity, emitAgentStatus } from "./activityEmitter";
 
@@ -202,6 +207,21 @@ Format your response as:
               const payload = (args.payload as Record<string, unknown>) ?? { message: args.message ?? "Agent notification" };
               const result = await sendWebhookTool(agentId, agent.name, payload);
               toolResult = result.output + (result.error ? `\nError: ${result.error}` : "");
+            } else if (fnName === "website_read") {
+              const result = await websiteReadFileTool(agentId, agent.name, String(args.path ?? ""));
+              toolResult = result.output + (result.error ? `\nError: ${result.error}` : "");
+            } else if (fnName === "website_write") {
+              const result = await websiteWriteFileTool(agentId, agent.name, String(args.path ?? ""), String(args.content ?? ""));
+              toolResult = result.output + (result.error ? `\nError: ${result.error}` : "");
+            } else if (fnName === "website_build") {
+              const result = await websiteBuildTool(agentId, agent.name);
+              toolResult = result.output + (result.error ? `\nError: ${result.error}` : "");
+            } else if (fnName === "website_deploy") {
+              const result = await websiteDeployTool(agentId, agent.name);
+              toolResult = result.output + (result.error ? `\nError: ${result.error}` : "");
+            } else if (fnName === "website_health") {
+              const result = await websiteHealthCheckTool(agentId, agent.name);
+              toolResult = result.output + (result.error ? `\nError: ${result.error}` : "");
             }
           } catch (err) {
             toolResult = `Error: ${err instanceof Error ? err.message : String(err)}`;
@@ -275,6 +295,11 @@ function getToolStepMessage(fnName: string, args: Record<string, unknown>): stri
     case "file_list": return `Listing files in: ${args.dir ?? "/"}`;
     case "code_exec": return `Executing ${args.language ?? "node"} code...`;
     case "send_email": return `Sending email to ${args.to}...`;
+    case "website_read": return `Reading website file: ${args.path}`;
+    case "website_write": return `Writing website file: ${args.path}`;
+    case "website_build": return `Running website build...`;
+    case "website_deploy": return `Deploying website...`;
+    case "website_health": return `Checking site health...`;
     default: return `Using tool: ${fnName}`;
   }
 }
@@ -283,6 +308,7 @@ function getToolStatus(fnName: string): string {
   if (fnName === "web_search") return "searching";
   if (fnName === "vps_shell" || fnName === "code_exec") return "executing";
   if (fnName.startsWith("file_")) return "writing";
+  if (fnName.startsWith("website_")) return "executing";
   return "thinking";
 }
 
@@ -413,6 +439,57 @@ function buildToolDefinitions(toolsEnabled: string[]) {
         },
       },
     },
+    {
+      type: "function" as const,
+      function: {
+        name: "website_read",
+        description: "Read a file from the website directory on the VPS via SFTP.",
+        parameters: {
+          type: "object",
+          properties: { path: { type: "string", description: "Full path to the file on the VPS" } },
+          required: ["path"],
+        },
+      },
+    },
+    {
+      type: "function" as const,
+      function: {
+        name: "website_write",
+        description: "Write/overwrite a file in the website directory on the VPS via SFTP.",
+        parameters: {
+          type: "object",
+          properties: {
+            path: { type: "string", description: "Full path to the file on the VPS" },
+            content: { type: "string", description: "New file content" },
+          },
+          required: ["path", "content"],
+        },
+      },
+    },
+    {
+      type: "function" as const,
+      function: {
+        name: "website_build",
+        description: "Run the configured build command in the website directory on the VPS.",
+        parameters: { type: "object", properties: {} },
+      },
+    },
+    {
+      type: "function" as const,
+      function: {
+        name: "website_deploy",
+        description: "Run the configured deploy command (or build + git push) for the website on the VPS.",
+        parameters: { type: "object", properties: {} },
+      },
+    },
+    {
+      type: "function" as const,
+      function: {
+        name: "website_health",
+        description: "Perform an HTTP health check on the website URL and return status code and latency.",
+        parameters: { type: "object", properties: {} },
+      },
+    },
   ];
 
   const toolMap: Record<string, typeof all[0]> = {
@@ -425,6 +502,11 @@ function buildToolDefinitions(toolsEnabled: string[]) {
     send_email: all[6]!,
     delegate_to_agent: all[7]!,
     send_webhook: all[8]!,
+    website_read: all[9]!,
+    website_write: all[10]!,
+    website_build: all[11]!,
+    website_deploy: all[12]!,
+    website_health: all[13]!,
   };
 
   if (toolsEnabled.includes("all") || toolsEnabled.length === 0) return all;
@@ -561,6 +643,21 @@ Provide a clear, well-structured answer. End your response naturally.`,
             } else if (fnName === "send_webhook") {
               const payload = (args.payload as Record<string, unknown>) ?? { message: args.message ?? "Agent notification" };
               const result = await sendWebhookTool(agentId, agent.name, payload);
+              toolResult = result.output + (result.error ? `\nError: ${result.error}` : "");
+            } else if (fnName === "website_read") {
+              const result = await websiteReadFileTool(agentId, agent.name, String(args.path ?? ""));
+              toolResult = result.output + (result.error ? `\nError: ${result.error}` : "");
+            } else if (fnName === "website_write") {
+              const result = await websiteWriteFileTool(agentId, agent.name, String(args.path ?? ""), String(args.content ?? ""));
+              toolResult = result.output + (result.error ? `\nError: ${result.error}` : "");
+            } else if (fnName === "website_build") {
+              const result = await websiteBuildTool(agentId, agent.name);
+              toolResult = result.output + (result.error ? `\nError: ${result.error}` : "");
+            } else if (fnName === "website_deploy") {
+              const result = await websiteDeployTool(agentId, agent.name);
+              toolResult = result.output + (result.error ? `\nError: ${result.error}` : "");
+            } else if (fnName === "website_health") {
+              const result = await websiteHealthCheckTool(agentId, agent.name);
               toolResult = result.output + (result.error ? `\nError: ${result.error}` : "");
             }
           } catch (toolErr) {

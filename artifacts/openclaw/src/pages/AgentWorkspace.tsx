@@ -23,11 +23,21 @@ import {
   MessageSquare,
   ArrowUpRight,
   ArrowDownLeft,
+  Globe2,
+  Play,
+  RefreshCw,
+  CheckCircle,
+  XCircle,
+  Loader2,
+  ChevronRight,
+  Folder,
+  Save,
+  Rocket,
 } from "lucide-react";
 import { apiFetch } from "@/lib/api";
 import { formatDistanceToNow } from "date-fns";
 
-type WorkspaceTab = "chat" | "delegation" | "files";
+type WorkspaceTab = "chat" | "delegation" | "files" | "website";
 
 interface AgentFileRow {
   id: number;
@@ -48,6 +58,160 @@ export default function AgentWorkspace() {
   const [activeTab, setActiveTab] = useState<WorkspaceTab>("chat");
   const [agentFiles, setAgentFiles] = useState<AgentFileRow[]>([]);
   const [selectedFile, setSelectedFile] = useState<AgentFileRow | null>(null);
+
+  /* ── Website tab state ─────────────────────────────────────── */
+  interface WebsiteConfig {
+    id?: number; type?: string; repoUrl?: string | null; branch?: string;
+    vpsDirectory?: string | null; siteUrl?: string | null;
+    buildCommand?: string | null; deployCommand?: string | null;
+  }
+  interface SiteHealth { ok: boolean; status?: number; latencyMs?: number; title?: string | null; error?: string; url?: string }
+  interface GitInfo { branch?: string | null; commit?: string | null; commitMessage?: string | null; commitAuthor?: string | null; commitAge?: string | null; uncommittedFiles?: number }
+  interface VpsFileEntry { name: string; path: string; type: string; size: number; modifiedAt: string }
+
+  const [websiteConfig, setWebsiteConfig] = useState<WebsiteConfig>({});
+  const [websiteConfigLoaded, setWebsiteConfigLoaded] = useState(false);
+  const [websiteConfigSaving, setWebsiteConfigSaving] = useState(false);
+  const [siteHealth, setSiteHealth] = useState<SiteHealth | null>(null);
+  const [siteHealthLoading, setSiteHealthLoading] = useState(false);
+  const [gitInfo, setGitInfo] = useState<GitInfo | null>(null);
+  const [vpsFiles, setVpsFiles] = useState<VpsFileEntry[]>([]);
+  const [vpsFilesLoading, setVpsFilesLoading] = useState(false);
+  const [currentVpsDir, setCurrentVpsDir] = useState<string | null>(null);
+  const [vfsSelectedPath, setVfsSelectedPath] = useState<string | null>(null);
+  const [vfsFileContent, setVfsFileContent] = useState<string>("");
+  const [vfsFileLoading, setVfsFileLoading] = useState(false);
+  const [vfsFileSaving, setVfsFileSaving] = useState(false);
+  const [deployLog, setDeployLog] = useState<string[]>([]);
+  const [isDeploying, setIsDeploying] = useState(false);
+  const [showDeployLog, setShowDeployLog] = useState(false);
+  const [websiteView, setWebsiteView] = useState<"overview" | "files" | "editor" | "deploy">("overview");
+  const deployLogRef = useRef<HTMLDivElement>(null);
+
+  const loadWebsiteTab = async () => {
+    if (websiteConfigLoaded) return;
+    try {
+      const r = await apiFetch(`/api/agents/${agentId}/website`);
+      if (r.ok) {
+        const cfg = await r.json() as WebsiteConfig;
+        setWebsiteConfig(cfg);
+        setCurrentVpsDir(cfg.vpsDirectory ?? null);
+      }
+    } catch {}
+    setWebsiteConfigLoaded(true);
+  };
+
+  const checkSiteHealth = async () => {
+    setSiteHealthLoading(true);
+    try {
+      const r = await apiFetch(`/api/agents/${agentId}/website/health`);
+      if (r.ok) setSiteHealth(await r.json() as SiteHealth);
+    } catch {}
+    setSiteHealthLoading(false);
+  };
+
+  const loadGitInfo = async () => {
+    try {
+      const r = await apiFetch(`/api/agents/${agentId}/website/git`);
+      if (r.ok) setGitInfo(await r.json() as GitInfo);
+    } catch {}
+  };
+
+  const loadVpsFiles = async (dir: string) => {
+    setVpsFilesLoading(true);
+    setVpsFiles([]);
+    try {
+      const r = await apiFetch(`/api/agents/${agentId}/website/files?path=${encodeURIComponent(dir)}`);
+      if (r.ok) {
+        const files = await r.json() as VpsFileEntry[];
+        setVpsFiles(files.sort((a, b) => (a.type === "directory" ? -1 : 1) - (b.type === "directory" ? -1 : 1) || a.name.localeCompare(b.name)));
+        setCurrentVpsDir(dir);
+      }
+    } catch {}
+    setVpsFilesLoading(false);
+  };
+
+  const openVfsFile = async (path: string) => {
+    setVfsSelectedPath(path);
+    setVfsFileLoading(true);
+    setVfsFileContent("");
+    setWebsiteView("editor");
+    try {
+      const r = await apiFetch(`/api/agents/${agentId}/website/files/content?path=${encodeURIComponent(path)}`);
+      if (r.ok) {
+        const data = await r.json() as { content: string };
+        setVfsFileContent(data.content);
+      }
+    } catch {}
+    setVfsFileLoading(false);
+  };
+
+  const saveVfsFile = async () => {
+    if (!vfsSelectedPath) return;
+    setVfsFileSaving(true);
+    try {
+      await apiFetch(`/api/agents/${agentId}/website/files/content`, {
+        method: "PUT",
+        body: JSON.stringify({ path: vfsSelectedPath, content: vfsFileContent }),
+      });
+    } catch {}
+    setVfsFileSaving(false);
+  };
+
+  const saveWebsiteConfig = async () => {
+    setWebsiteConfigSaving(true);
+    try {
+      const r = await apiFetch(`/api/agents/${agentId}/website`, {
+        method: "PUT",
+        body: JSON.stringify(websiteConfig),
+      });
+      if (r.ok) {
+        const cfg = await r.json() as WebsiteConfig;
+        setWebsiteConfig(cfg);
+        setCurrentVpsDir(cfg.vpsDirectory ?? null);
+      }
+    } catch {}
+    setWebsiteConfigSaving(false);
+  };
+
+  const startDeploy = async () => {
+    setIsDeploying(true);
+    setDeployLog([]);
+    setShowDeployLog(true);
+    setWebsiteView("deploy");
+    try {
+      const r = await apiFetch(`/api/agents/${agentId}/website/deploy`, { method: "POST" });
+      if (!r.body) { setIsDeploying(false); return; }
+      const reader = r.body.getReader();
+      const decoder = new TextDecoder();
+      let buf = "";
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        buf += decoder.decode(value, { stream: true });
+        const lines = buf.split("\n");
+        buf = lines.pop() ?? "";
+        for (const line of lines) {
+          if (line.startsWith("data: ")) {
+            try {
+              const evt = JSON.parse(line.slice(6)) as { type: string; data: string };
+              setDeployLog((prev) => [...prev, evt.data]);
+              deployLogRef.current?.scrollTo({ top: deployLogRef.current.scrollHeight });
+            } catch {}
+          }
+        }
+      }
+    } catch (e) {
+      setDeployLog((prev) => [...prev, `Error: ${String(e)}`]);
+    }
+    setIsDeploying(false);
+  };
+
+  useEffect(() => {
+    if (activeTab === "website") {
+      loadWebsiteTab();
+    }
+  }, [activeTab, agentId]);
 
   useEffect(() => {
     if (conversations?.length && !activeConvId) {
@@ -122,8 +286,9 @@ export default function AgentWorkspace() {
 
   const TABS: { id: WorkspaceTab; label: string; icon: React.ReactNode }[] = [
     { id: "chat", label: "Chat", icon: <MessageSquare className="w-4 h-4" /> },
-    { id: "delegation", label: "Delegation Log", icon: <GitBranch className="w-4 h-4" /> },
-    { id: "files", label: "File Workspace", icon: <FileText className="w-4 h-4" /> },
+    { id: "delegation", label: "Delegation", icon: <GitBranch className="w-4 h-4" /> },
+    { id: "files", label: "Files", icon: <FileText className="w-4 h-4" /> },
+    { id: "website", label: "Website", icon: <Globe2 className="w-4 h-4" /> },
   ];
 
   return (
@@ -199,6 +364,45 @@ export default function AgentWorkspace() {
                 </button>
               ))
             )}
+          </div>
+        )}
+
+        {/* Website sidebar */}
+        {activeTab === "website" && (
+          <div className="flex-1 overflow-y-auto p-3 space-y-1 custom-scrollbar">
+            {(["overview", "files", "editor", "deploy"] as const).map((v) => {
+              const labels: Record<string, string> = { overview: "Config & Status", files: "File Browser", editor: "File Editor", deploy: "Deploy Log" };
+              return (
+                <button
+                  key={v}
+                  onClick={() => setWebsiteView(v)}
+                  className={`w-full text-left px-3 py-2 rounded-lg text-xs transition-colors flex items-center gap-2 ${websiteView === v ? "bg-primary/20 text-primary font-medium" : "text-muted-foreground hover:bg-white/5 hover:text-white"}`}
+                >
+                  <ChevronRight className="w-3 h-3" /> {labels[v]}
+                </button>
+              );
+            })}
+            <div className="pt-3 border-t border-white/10 mt-3">
+              {siteHealth ? (
+                <div className={`flex items-center gap-2 px-3 py-2 rounded-lg text-xs ${siteHealth.ok ? "bg-green-500/10 text-green-400" : "bg-red-500/10 text-red-400"}`}>
+                  {siteHealth.ok ? <CheckCircle className="w-3 h-3" /> : <XCircle className="w-3 h-3" />}
+                  {siteHealth.ok ? `UP · ${siteHealth.latencyMs}ms` : "DOWN"}
+                </div>
+              ) : (
+                <button
+                  onClick={() => { void checkSiteHealth(); }}
+                  className="w-full px-3 py-2 rounded-lg text-xs text-muted-foreground hover:text-white hover:bg-white/5 transition-colors flex items-center gap-2"
+                >
+                  <RefreshCw className="w-3 h-3" /> Check Health
+                </button>
+              )}
+              {gitInfo?.branch && (
+                <div className="px-3 py-2 text-xs text-muted-foreground font-mono mt-1">
+                  <span className="text-yellow-400">⎇ {gitInfo.branch}</span>
+                  {gitInfo.commit && <><br /><span className="text-white/40">{gitInfo.commit}</span></>}
+                </div>
+              )}
+            </div>
           </div>
         )}
       </div>
@@ -457,6 +661,360 @@ export default function AgentWorkspace() {
                 </div>
               )}
             </div>
+          </div>
+        )}
+
+        {/* WEBSITE TAB */}
+        {activeTab === "website" && (
+          <div className="flex-1 overflow-y-auto p-4 md:p-6 custom-scrollbar">
+
+            {/* ── Overview: Config + Status ── */}
+            {websiteView === "overview" && (
+              <div className="space-y-6">
+                {/* Header */}
+                <div className="flex items-center gap-3">
+                  <Globe2 className="w-5 h-5 text-primary" />
+                  <h3 className="text-lg font-semibold text-white">Website Management</h3>
+                  <button
+                    onClick={startDeploy}
+                    disabled={isDeploying}
+                    className="ml-auto flex items-center gap-2 px-4 py-2 rounded-xl bg-primary text-primary-foreground hover:bg-primary/90 disabled:opacity-50 text-sm font-medium shadow-lg shadow-primary/20 transition-colors"
+                  >
+                    {isDeploying ? <Loader2 className="w-4 h-4 animate-spin" /> : <Rocket className="w-4 h-4" />}
+                    {isDeploying ? "Deploying…" : "Deploy Now"}
+                  </button>
+                </div>
+
+                {/* Site status card */}
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                  <div className="p-4 rounded-xl bg-black/30 border border-white/10">
+                    <div className="flex items-center justify-between mb-3">
+                      <span className="text-xs text-muted-foreground font-medium uppercase tracking-wider">Site Health</span>
+                      <button
+                        onClick={() => { void checkSiteHealth(); }}
+                        disabled={siteHealthLoading}
+                        className="p-1 rounded-md text-muted-foreground hover:text-white transition-colors"
+                      >
+                        <RefreshCw className={`w-3.5 h-3.5 ${siteHealthLoading ? "animate-spin" : ""}`} />
+                      </button>
+                    </div>
+                    {siteHealth ? (
+                      <>
+                        <div className={`flex items-center gap-2 text-lg font-bold ${siteHealth.ok ? "text-green-400" : "text-red-400"}`}>
+                          {siteHealth.ok ? <CheckCircle className="w-5 h-5" /> : <XCircle className="w-5 h-5" />}
+                          {siteHealth.ok ? "UP" : "DOWN"}
+                        </div>
+                        <div className="mt-1 text-xs text-muted-foreground">
+                          HTTP {siteHealth.status} · {siteHealth.latencyMs}ms
+                          {siteHealth.title && <span className="block mt-0.5 text-white/60 truncate">{siteHealth.title}</span>}
+                        </div>
+                      </>
+                    ) : (
+                      <p className="text-sm text-muted-foreground/60">Not checked yet</p>
+                    )}
+                    {websiteConfig.siteUrl && (
+                      <a href={websiteConfig.siteUrl} target="_blank" rel="noreferrer" className="mt-3 flex items-center gap-1 text-xs text-primary hover:underline truncate">
+                        <Globe className="w-3 h-3" /> {websiteConfig.siteUrl}
+                      </a>
+                    )}
+                  </div>
+                  <div className="p-4 rounded-xl bg-black/30 border border-white/10">
+                    <div className="flex items-center justify-between mb-3">
+                      <span className="text-xs text-muted-foreground font-medium uppercase tracking-wider">Git Info</span>
+                      <button
+                        onClick={() => { void loadGitInfo(); }}
+                        className="p-1 rounded-md text-muted-foreground hover:text-white transition-colors"
+                      >
+                        <RefreshCw className="w-3.5 h-3.5" />
+                      </button>
+                    </div>
+                    {gitInfo ? (
+                      <>
+                        <div className="flex items-center gap-2 text-yellow-400 font-mono text-sm">
+                          <GitBranch className="w-4 h-4" /> {gitInfo.branch ?? "unknown"}
+                        </div>
+                        {gitInfo.commitMessage && (
+                          <p className="mt-1 text-xs text-white/70 line-clamp-2">{gitInfo.commitMessage}</p>
+                        )}
+                        {gitInfo.commitAge && (
+                          <p className="mt-1 text-[10px] text-muted-foreground">{gitInfo.commitAge}</p>
+                        )}
+                        {(gitInfo.uncommittedFiles ?? 0) > 0 && (
+                          <p className="mt-1.5 text-[10px] text-orange-400">{gitInfo.uncommittedFiles} uncommitted file(s)</p>
+                        )}
+                      </>
+                    ) : (
+                      <p className="text-sm text-muted-foreground/60">Click refresh to load</p>
+                    )}
+                  </div>
+                </div>
+
+                {/* Config form */}
+                <div className="p-4 rounded-xl bg-black/30 border border-white/10 space-y-4">
+                  <h4 className="text-sm font-semibold text-white">Configuration</h4>
+                  <div className="grid grid-cols-2 gap-3">
+                    <div>
+                      <label className="block text-xs text-muted-foreground mb-1">Type</label>
+                      <select
+                        value={websiteConfig.type ?? "vps-path"}
+                        onChange={(e) => setWebsiteConfig((p) => ({ ...p, type: e.target.value }))}
+                        className="w-full bg-white/5 border border-white/10 rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:border-primary/50"
+                      >
+                        <option value="vps-path">VPS Path</option>
+                        <option value="git">Git Repo</option>
+                      </select>
+                    </div>
+                    <div>
+                      <label className="block text-xs text-muted-foreground mb-1">Branch</label>
+                      <input
+                        type="text"
+                        value={websiteConfig.branch ?? "main"}
+                        onChange={(e) => setWebsiteConfig((p) => ({ ...p, branch: e.target.value }))}
+                        placeholder="main"
+                        className="w-full bg-white/5 border border-white/10 rounded-lg px-3 py-2 text-sm text-white placeholder:text-muted-foreground/50 focus:outline-none focus:border-primary/50"
+                      />
+                    </div>
+                  </div>
+                  <div>
+                    <label className="block text-xs text-muted-foreground mb-1">VPS Directory</label>
+                    <input
+                      type="text"
+                      value={websiteConfig.vpsDirectory ?? ""}
+                      onChange={(e) => setWebsiteConfig((p) => ({ ...p, vpsDirectory: e.target.value }))}
+                      placeholder="/var/www/mysite"
+                      className="w-full bg-white/5 border border-white/10 rounded-lg px-3 py-2 text-sm text-white placeholder:text-muted-foreground/50 focus:outline-none focus:border-primary/50 font-mono"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-xs text-muted-foreground mb-1">Site URL</label>
+                    <input
+                      type="url"
+                      value={websiteConfig.siteUrl ?? ""}
+                      onChange={(e) => setWebsiteConfig((p) => ({ ...p, siteUrl: e.target.value }))}
+                      placeholder="https://example.com"
+                      className="w-full bg-white/5 border border-white/10 rounded-lg px-3 py-2 text-sm text-white placeholder:text-muted-foreground/50 focus:outline-none focus:border-primary/50"
+                    />
+                  </div>
+                  {websiteConfig.type === "git" && (
+                    <div>
+                      <label className="block text-xs text-muted-foreground mb-1">Repo URL</label>
+                      <input
+                        type="text"
+                        value={websiteConfig.repoUrl ?? ""}
+                        onChange={(e) => setWebsiteConfig((p) => ({ ...p, repoUrl: e.target.value }))}
+                        placeholder="git@github.com:user/repo.git"
+                        className="w-full bg-white/5 border border-white/10 rounded-lg px-3 py-2 text-sm text-white placeholder:text-muted-foreground/50 focus:outline-none focus:border-primary/50 font-mono"
+                      />
+                    </div>
+                  )}
+                  <div>
+                    <label className="block text-xs text-muted-foreground mb-1">Build Command</label>
+                    <input
+                      type="text"
+                      value={websiteConfig.buildCommand ?? ""}
+                      onChange={(e) => setWebsiteConfig((p) => ({ ...p, buildCommand: e.target.value }))}
+                      placeholder="npm run build"
+                      className="w-full bg-white/5 border border-white/10 rounded-lg px-3 py-2 text-sm text-white placeholder:text-muted-foreground/50 focus:outline-none focus:border-primary/50 font-mono"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-xs text-muted-foreground mb-1">Deploy Command</label>
+                    <input
+                      type="text"
+                      value={websiteConfig.deployCommand ?? ""}
+                      onChange={(e) => setWebsiteConfig((p) => ({ ...p, deployCommand: e.target.value }))}
+                      placeholder="pm2 restart app  (leave blank to use build only)"
+                      className="w-full bg-white/5 border border-white/10 rounded-lg px-3 py-2 text-sm text-white placeholder:text-muted-foreground/50 focus:outline-none focus:border-primary/50 font-mono"
+                    />
+                  </div>
+                  <button
+                    onClick={() => { void saveWebsiteConfig(); }}
+                    disabled={websiteConfigSaving}
+                    className="flex items-center gap-2 px-4 py-2 rounded-xl bg-white/10 hover:bg-white/15 border border-white/10 text-sm text-white transition-colors"
+                  >
+                    {websiteConfigSaving ? <Loader2 className="w-4 h-4 animate-spin" /> : <Save className="w-4 h-4" />}
+                    {websiteConfigSaving ? "Saving…" : "Save Config"}
+                  </button>
+                </div>
+              </div>
+            )}
+
+            {/* ── File Browser ── */}
+            {websiteView === "files" && (
+              <div className="space-y-4">
+                <div className="flex items-center gap-3">
+                  <Folder className="w-5 h-5 text-yellow-400" />
+                  <h3 className="text-lg font-semibold text-white">File Browser</h3>
+                  <button
+                    onClick={() => { const dir = currentVpsDir ?? websiteConfig.vpsDirectory ?? ""; if (dir) { void loadVpsFiles(dir); } }}
+                    className="ml-auto p-2 rounded-lg text-muted-foreground hover:text-white hover:bg-white/5 transition-colors"
+                  >
+                    <RefreshCw className="w-4 h-4" />
+                  </button>
+                </div>
+
+                {!currentVpsDir && !websiteConfig.vpsDirectory ? (
+                  <div className="flex flex-col items-center py-20 text-center opacity-60">
+                    <Folder className="w-10 h-10 text-muted-foreground mb-4" />
+                    <p className="text-muted-foreground text-sm">Configure VPS Directory in the Overview tab first</p>
+                  </div>
+                ) : (
+                  <>
+                    {/* breadcrumb */}
+                    <div className="flex items-center gap-1 text-xs font-mono text-muted-foreground overflow-x-auto custom-scrollbar pb-1">
+                      <button
+                        onClick={() => {
+                          const rootDir = websiteConfig.vpsDirectory ?? currentVpsDir ?? "";
+                          if (rootDir) void loadVpsFiles(rootDir);
+                        }}
+                        className="hover:text-primary transition-colors shrink-0"
+                      >
+                        root
+                      </button>
+                      {currentVpsDir && currentVpsDir !== websiteConfig.vpsDirectory && (
+                        <>
+                          <ChevronRight className="w-3 h-3 shrink-0" />
+                          <span className="text-white truncate">{currentVpsDir}</span>
+                        </>
+                      )}
+                    </div>
+
+                    {vpsFilesLoading ? (
+                      <div className="flex items-center justify-center py-10">
+                        <Loader2 className="w-6 h-6 animate-spin text-primary" />
+                      </div>
+                    ) : vpsFiles.length === 0 && !vpsFilesLoading ? (
+                      <div className="text-center py-16">
+                        <button
+                          onClick={() => { const dir = currentVpsDir ?? websiteConfig.vpsDirectory ?? ""; if (dir) void loadVpsFiles(dir); }}
+                          className="px-4 py-2 rounded-xl bg-primary/20 text-primary hover:bg-primary/30 transition-colors text-sm"
+                        >
+                          <Play className="w-4 h-4 inline mr-2" /> Load Files
+                        </button>
+                      </div>
+                    ) : (
+                      <div className="space-y-1">
+                        {currentVpsDir && currentVpsDir !== websiteConfig.vpsDirectory && (
+                          <button
+                            onClick={() => {
+                              const parts = currentVpsDir.split("/").filter(Boolean);
+                              parts.pop();
+                              const parent = "/" + parts.join("/");
+                              void loadVpsFiles(parent || websiteConfig.vpsDirectory || "/");
+                            }}
+                            className="w-full text-left px-3 py-2.5 rounded-lg bg-white/5 hover:bg-white/10 text-xs text-muted-foreground font-mono transition-colors flex items-center gap-2"
+                          >
+                            <Folder className="w-3.5 h-3.5" /> ..
+                          </button>
+                        )}
+                        {vpsFiles.map((f) => (
+                          <button
+                            key={f.path}
+                            onClick={() => {
+                              if (f.type === "directory") {
+                                void loadVpsFiles(f.path);
+                              } else {
+                                void openVfsFile(f.path);
+                              }
+                            }}
+                            className="w-full text-left px-3 py-2.5 rounded-lg hover:bg-white/5 text-xs font-mono transition-colors flex items-center gap-2 group"
+                          >
+                            {f.type === "directory" ? (
+                              <Folder className="w-3.5 h-3.5 text-yellow-400 shrink-0" />
+                            ) : (
+                              <FileText className="w-3.5 h-3.5 text-blue-400 shrink-0" />
+                            )}
+                            <span className="flex-1 truncate text-white/80 group-hover:text-white">{f.name}</span>
+                            {f.type === "file" && (
+                              <span className="text-muted-foreground/60 shrink-0">{f.size > 1024 ? `${(f.size / 1024).toFixed(1)}KB` : `${f.size}B`}</span>
+                            )}
+                          </button>
+                        ))}
+                      </div>
+                    )}
+                  </>
+                )}
+              </div>
+            )}
+
+            {/* ── File Editor ── */}
+            {websiteView === "editor" && (
+              <div className="flex flex-col h-full space-y-3">
+                <div className="flex items-center gap-3 shrink-0">
+                  <button onClick={() => setWebsiteView("files")} className="text-xs text-primary hover:underline">← Files</button>
+                  <span className="text-white font-mono text-sm truncate flex-1">{vfsSelectedPath ?? "(no file selected)"}</span>
+                  <button
+                    onClick={() => { void saveVfsFile(); }}
+                    disabled={vfsFileSaving || !vfsSelectedPath}
+                    className="flex items-center gap-2 px-3 py-1.5 rounded-lg bg-primary text-primary-foreground hover:bg-primary/90 disabled:opacity-50 text-xs font-medium transition-colors"
+                  >
+                    {vfsFileSaving ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Save className="w-3.5 h-3.5" />}
+                    {vfsFileSaving ? "Saving…" : "Save"}
+                  </button>
+                </div>
+                {vfsFileLoading ? (
+                  <div className="flex-1 flex items-center justify-center">
+                    <Loader2 className="w-6 h-6 animate-spin text-primary" />
+                  </div>
+                ) : !vfsSelectedPath ? (
+                  <div className="flex-1 flex items-center justify-center text-center opacity-60">
+                    <div>
+                      <FileText className="w-10 h-10 text-muted-foreground mx-auto mb-3" />
+                      <p className="text-muted-foreground text-sm">Select a file in the File Browser to edit it</p>
+                    </div>
+                  </div>
+                ) : (
+                  <textarea
+                    value={vfsFileContent}
+                    onChange={(e) => setVfsFileContent(e.target.value)}
+                    spellCheck={false}
+                    className="flex-1 w-full bg-black/40 border border-white/10 rounded-xl p-4 text-sm text-white font-mono resize-none focus:outline-none focus:border-primary/40 custom-scrollbar"
+                  />
+                )}
+              </div>
+            )}
+
+            {/* ── Deploy Log ── */}
+            {websiteView === "deploy" && (
+              <div className="space-y-4">
+                <div className="flex items-center gap-3">
+                  <Rocket className="w-5 h-5 text-primary" />
+                  <h3 className="text-lg font-semibold text-white">Deploy Log</h3>
+                  <button
+                    onClick={startDeploy}
+                    disabled={isDeploying}
+                    className="ml-auto flex items-center gap-2 px-4 py-2 rounded-xl bg-primary text-primary-foreground hover:bg-primary/90 disabled:opacity-50 text-sm font-medium shadow-lg shadow-primary/20 transition-colors"
+                  >
+                    {isDeploying ? <Loader2 className="w-4 h-4 animate-spin" /> : <Rocket className="w-4 h-4" />}
+                    {isDeploying ? "Deploying…" : "Deploy Now"}
+                  </button>
+                </div>
+                <div
+                  ref={deployLogRef}
+                  className="bg-black/60 border border-white/10 rounded-xl p-4 font-mono text-xs overflow-y-auto custom-scrollbar space-y-0.5"
+                  style={{ minHeight: "300px", maxHeight: "60vh" }}
+                >
+                  {deployLog.length === 0 ? (
+                    <p className="text-muted-foreground/60">No deploy logs yet. Click Deploy Now to start.</p>
+                  ) : (
+                    deployLog.map((line, i) => (
+                      <div
+                        key={i}
+                        className={`${line.startsWith("✓") ? "text-green-400" : line.startsWith("⚠") ? "text-yellow-400" : line.startsWith("Error") || line.startsWith("✗") ? "text-red-400" : line.startsWith("$") ? "text-primary" : "text-white/70"} whitespace-pre-wrap break-all leading-5`}
+                      >
+                        {line}
+                      </div>
+                    ))
+                  )}
+                  {isDeploying && (
+                    <div className="flex items-center gap-2 text-primary mt-2">
+                      <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                      <span>Deploying…</span>
+                    </div>
+                  )}
+                </div>
+              </div>
+            )}
           </div>
         )}
       </div>

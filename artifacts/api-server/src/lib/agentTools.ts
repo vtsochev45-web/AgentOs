@@ -1,9 +1,9 @@
 import path from "path";
 import os from "os";
 import { db } from "@workspace/db";
-import { activityLogTable, agentsTable, agentMessagesTable, agentFilesTable, appSettingsTable } from "@workspace/db";
+import { activityLogTable, agentsTable, agentMessagesTable, agentFilesTable, appSettingsTable, websiteConfigsTable } from "@workspace/db";
 import { eq, and } from "drizzle-orm";
-import { exec as sshExec } from "./sshManager";
+import { exec as sshExec, sftpReadFileById, sftpWriteFileById } from "./sshManager";
 import { emitActivity } from "./activityEmitter";
 import { decrypt } from "./encryption";
 
@@ -415,6 +415,146 @@ export async function sendWebhookTool(
     }
 
     return { success: true, output: `Webhook delivered to ${settings.webhookUrl} (${res.status})` };
+  } catch (err) {
+    const error = err instanceof Error ? err.message : String(err);
+    return { success: false, output: "", error };
+  }
+}
+
+/* ── Website Management Tools ──────────────────────────────────── */
+
+async function getWebsiteConfig(agentId: number) {
+  const [config] = await db
+    .select()
+    .from(websiteConfigsTable)
+    .where(eq(websiteConfigsTable.agentId, agentId))
+    .limit(1);
+  return config;
+}
+
+export async function websiteReadFileTool(
+  agentId: number,
+  agentName: string,
+  filePath: string
+): Promise<ToolResult> {
+  await logActivity(agentId, agentName, "website_read", `Reading: ${filePath}`);
+
+  const config = await getWebsiteConfig(agentId);
+  if (!config?.vpsDirectory) return { success: false, output: "", error: "No website VPS directory configured" };
+
+  const creds = await getVpsCredentials();
+  if (!creds) return { success: false, output: "", error: "VPS not configured" };
+
+  try {
+    const content = await sftpReadFileById(creds.id, creds, filePath);
+    return { success: true, output: content };
+  } catch (err) {
+    return { success: false, output: "", error: String(err) };
+  }
+}
+
+export async function websiteWriteFileTool(
+  agentId: number,
+  agentName: string,
+  filePath: string,
+  content: string
+): Promise<ToolResult> {
+  await logActivity(agentId, agentName, "website_write", `Writing: ${filePath}`);
+
+  const config = await getWebsiteConfig(agentId);
+  if (!config?.vpsDirectory) return { success: false, output: "", error: "No website VPS directory configured" };
+
+  const creds = await getVpsCredentials();
+  if (!creds) return { success: false, output: "", error: "VPS not configured" };
+
+  try {
+    await sftpWriteFileById(creds.id, creds, filePath, content);
+    return { success: true, output: `Written ${content.length} chars to ${filePath}` };
+  } catch (err) {
+    return { success: false, output: "", error: String(err) };
+  }
+}
+
+export async function websiteBuildTool(
+  agentId: number,
+  agentName: string
+): Promise<ToolResult> {
+  await logActivity(agentId, agentName, "website_build", "Running build command");
+
+  const config = await getWebsiteConfig(agentId);
+  if (!config?.vpsDirectory || !config?.buildCommand) {
+    return { success: false, output: "", error: "Website directory and build command must be configured" };
+  }
+
+  const creds = await getVpsCredentials();
+  if (!creds) return { success: false, output: "", error: "VPS not configured" };
+
+  try {
+    const result = await sshExec(
+      creds.id, creds,
+      `cd "${config.vpsDirectory}" && ${config.buildCommand} 2>&1`,
+      120000
+    );
+    const output = result.stdout + result.stderr;
+    const success = result.exitCode === 0;
+    await logActivity(agentId, agentName, "website_build", success ? "Build succeeded" : `Build failed (exit ${result.exitCode})`);
+    return { success, output };
+  } catch (err) {
+    return { success: false, output: "", error: String(err) };
+  }
+}
+
+export async function websiteDeployTool(
+  agentId: number,
+  agentName: string
+): Promise<ToolResult> {
+  await logActivity(agentId, agentName, "website_deploy", "Running deploy command");
+
+  const config = await getWebsiteConfig(agentId);
+  if (!config?.vpsDirectory) {
+    return { success: false, output: "", error: "Website directory must be configured" };
+  }
+
+  const creds = await getVpsCredentials();
+  if (!creds) return { success: false, output: "", error: "VPS not configured" };
+
+  const cmd = config.deployCommand
+    ? `cd "${config.vpsDirectory}" && ${config.deployCommand} 2>&1`
+    : config.buildCommand
+    ? `cd "${config.vpsDirectory}" && ${config.buildCommand} 2>&1`
+    : null;
+
+  if (!cmd) return { success: false, output: "", error: "No deploy or build command configured" };
+
+  try {
+    const result = await sshExec(creds.id, creds, cmd, 120000);
+    const output = result.stdout + result.stderr;
+    const success = result.exitCode === 0;
+    await logActivity(agentId, agentName, "website_deploy", success ? "Deploy succeeded" : `Deploy failed (exit ${result.exitCode})`);
+    return { success, output };
+  } catch (err) {
+    return { success: false, output: "", error: String(err) };
+  }
+}
+
+export async function websiteHealthCheckTool(
+  agentId: number,
+  agentName: string
+): Promise<ToolResult> {
+  await logActivity(agentId, agentName, "website_health", "Checking site health");
+
+  const config = await getWebsiteConfig(agentId);
+  if (!config?.siteUrl) return { success: false, output: "", error: "No site URL configured" };
+
+  try {
+    const start = Date.now();
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), 10000);
+    const r = await fetch(config.siteUrl, { signal: controller.signal });
+    clearTimeout(timer);
+    const latencyMs = Date.now() - start;
+    const output = `HTTP ${r.status} — ${r.ok ? "UP" : "DOWN"} — ${latencyMs}ms`;
+    return { success: r.ok, output };
   } catch (err) {
     const error = err instanceof Error ? err.message : String(err);
     return { success: false, output: "", error };
