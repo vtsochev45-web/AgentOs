@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect } from "react";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
@@ -10,16 +10,17 @@ import { apiFetch } from "@/lib/api";
 import {
   Settings as SettingsIcon, Server, Brain, Mail, Save, Search,
   Webhook, Key, Link2, RefreshCw, CheckCircle2, XCircle, BookOpen,
-  Loader2, ChevronRight, AlertCircle, Zap,
+  Loader2, ChevronRight, AlertCircle, Zap, PlugZap,
 } from "lucide-react";
 
-type Tab = "openclaw" | "providers" | "vps" | "skills" | "notifications";
+type Tab = "openclaw" | "providers" | "vps" | "skills" | "connections" | "notifications";
 
 const TABS: { id: Tab; label: string; icon: React.ElementType }[] = [
   { id: "openclaw", label: "Openclaw", icon: Link2 },
   { id: "providers", label: "Providers", icon: Brain },
   { id: "vps", label: "VPS", icon: Server },
   { id: "skills", label: "Skills", icon: BookOpen },
+  { id: "connections", label: "Connections", icon: PlugZap },
   { id: "notifications", label: "Alerts", icon: Webhook },
 ];
 
@@ -99,6 +100,9 @@ export default function Settings() {
           <VpsTab initialData={vpsConfig as VpsConfig | undefined} />
         )}
         {activeTab === "skills" && <SkillsTab />}
+        {activeTab === "connections" && (
+          <ConnectionsTab settings={settings as AppSettings | undefined} vpsConfig={vpsConfig as VpsConfig | undefined} />
+        )}
         {activeTab === "notifications" && (
           <NotificationsTab settings={settings as AppSettings | undefined} />
         )}
@@ -454,18 +458,14 @@ function VpsTab({ initialData }: { initialData?: VpsConfig }) {
     setTestStatus("loading");
     setTestDetail("");
     try {
-      const res = await apiFetch("/api/vps/exec", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ cmd: "echo OK" }),
-      });
-      if (res.ok) {
+      const res = await apiFetch("/api/vps/test", { method: "POST" });
+      const d = await res.json().catch(() => ({}));
+      if ((d as any).success) {
         setTestStatus("ok");
-        setTestDetail("SSH handshake succeeded");
+        setTestDetail((d as any).message ?? "SSH handshake succeeded");
       } else {
-        const d = await res.json().catch(() => ({}));
         setTestStatus("error");
-        setTestDetail((d as any).error ?? `HTTP ${res.status}`);
+        setTestDetail((d as any).message ?? `HTTP ${res.status}`);
       }
     } catch (e) {
       setTestStatus("error");
@@ -661,6 +661,190 @@ function SkillsTab() {
           </>
         )}
       </div>
+    </div>
+  );
+}
+
+/* ─────────────────────────────────────────────
+   Connections Tab
+───────────────────────────────────────────── */
+type ConnStatus = "idle" | "loading" | "ok" | "error";
+
+type IntegrationCard = {
+  key: string;
+  label: string;
+  icon: React.ElementType;
+  iconColor: string;
+  provider: string;
+  description: string;
+  configured: boolean;
+};
+
+function ConnectionCard({
+  card,
+  onTest,
+  status,
+  detail,
+}: {
+  card: IntegrationCard;
+  onTest: () => void;
+  status: ConnStatus;
+  detail: string;
+}) {
+  const Icon = card.icon;
+  return (
+    <div className={`${sectionCls} flex flex-col`}>
+      <div className="p-4 flex items-start gap-3">
+        <div className={`w-9 h-9 rounded-xl flex items-center justify-center flex-shrink-0`} style={{ background: "rgba(255,255,255,0.05)" }}>
+          <Icon className={`w-4 h-4`} style={{ color: card.iconColor }} />
+        </div>
+        <div className="flex-1 min-w-0">
+          <div className="flex items-center gap-2 flex-wrap">
+            <span className="font-bold text-sm text-white">{card.label}</span>
+            {card.configured ? (
+              <span className="text-[10px] font-mono text-green-400 bg-green-400/10 px-1.5 py-0.5 rounded-full border border-green-400/20">SET</span>
+            ) : (
+              <span className="text-[10px] font-mono text-white/30 bg-white/5 px-1.5 py-0.5 rounded-full border border-white/10">NOT SET</span>
+            )}
+          </div>
+          <p className="text-xs text-muted-foreground mt-0.5 truncate">{card.description}</p>
+        </div>
+      </div>
+      <div className="px-4 pb-4 flex items-center gap-3 mt-auto">
+        <button
+          onClick={onTest}
+          disabled={!card.configured || status === "loading"}
+          className="text-xs bg-white/5 hover:bg-white/10 border border-white/10 text-white px-3 py-1.5 rounded-lg flex items-center gap-1.5 transition-all disabled:opacity-40"
+        >
+          {status === "loading" ? <Loader2 className="w-3 h-3 animate-spin" /> : <Zap className="w-3 h-3" />}
+          Test
+        </button>
+        {status === "ok" && (
+          <span className="inline-flex items-center gap-1.5 text-xs text-green-400 font-medium">
+            <CheckCircle2 className="w-3.5 h-3.5" /> {detail || "OK"}
+          </span>
+        )}
+        {status === "error" && (
+          <span className="inline-flex items-center gap-1.5 text-xs text-red-400 font-medium truncate">
+            <XCircle className="w-3.5 h-3.5 flex-shrink-0" /> {detail || "Failed"}
+          </span>
+        )}
+      </div>
+    </div>
+  );
+}
+
+function ConnectionsTab({ settings, vpsConfig }: { settings?: AppSettings; vpsConfig?: VpsConfig }) {
+  const [statuses, setStatuses] = useState<Record<string, ConnStatus>>({});
+  const [details, setDetails] = useState<Record<string, string>>({});
+  const [testingAll, setTestingAll] = useState(false);
+
+  const s = settings as any;
+  const cards: IntegrationCard[] = [
+    {
+      key: "openai",
+      label: "OpenAI",
+      icon: Key,
+      iconColor: "#10b981",
+      provider: "openai",
+      description: "GPT models & embeddings",
+      configured: !!s?.openaiApiKeyConfigured,
+    },
+    {
+      key: "anthropic",
+      label: "Anthropic",
+      icon: Key,
+      iconColor: "#f97316",
+      provider: "anthropic",
+      description: "Claude models",
+      configured: !!s?.anthropicApiKeyConfigured,
+    },
+    {
+      key: "vps",
+      label: "VPS SSH",
+      icon: Server,
+      iconColor: "#00e5cc",
+      provider: "vps",
+      description: vpsConfig ? `${vpsConfig.username}@${vpsConfig.host}` : "SSH uplink to your server",
+      configured: !!vpsConfig?.hasCredentials,
+    },
+    {
+      key: "brave",
+      label: "Brave Search",
+      icon: Search,
+      iconColor: "#fb923c",
+      provider: "brave",
+      description: "Real-time web search",
+      configured: !!s?.braveApiKeyConfigured,
+    },
+    {
+      key: "smtp",
+      label: "Email / SMTP",
+      icon: Mail,
+      iconColor: "#60a5fa",
+      provider: "smtp",
+      description: s?.smtpHost ? `${s.smtpHost}:${s.smtpPort ?? 587}` : "Email notification relay",
+      configured: !!s?.smtpConfigured,
+    },
+    {
+      key: "webhook",
+      label: "Webhook",
+      icon: Webhook,
+      iconColor: "#a78bfa",
+      provider: "webhook",
+      description: s?.webhookUrl ? s.webhookUrl.substring(0, 40) + (s.webhookUrl.length > 40 ? "…" : "") : "POST event notifications",
+      configured: !!s?.webhookUrl,
+    },
+  ];
+
+  const testProvider = async (provider: string, key: string) => {
+    setStatuses(p => ({ ...p, [key]: "loading" }));
+    setDetails(p => ({ ...p, [key]: "" }));
+    try {
+      const res = await apiFetch(`/api/settings/test/${provider}`, { method: "POST" });
+      const data = await res.json();
+      setStatuses(p => ({ ...p, [key]: data.ok ? "ok" : "error" }));
+      setDetails(p => ({ ...p, [key]: data.message ?? data.error ?? (data.ok ? "Connected" : "Failed") }));
+    } catch (e) {
+      setStatuses(p => ({ ...p, [key]: "error" }));
+      setDetails(p => ({ ...p, [key]: String(e) }));
+    }
+  };
+
+  const testAll = async () => {
+    setTestingAll(true);
+    const configured = cards.filter(c => c.configured);
+    await Promise.all(configured.map(c => testProvider(c.provider, c.key)));
+    setTestingAll(false);
+  };
+
+  return (
+    <div className="space-y-5">
+      <div className="flex items-center justify-between">
+        <p className="text-sm text-muted-foreground">Live status of all configured integrations.</p>
+        <button
+          onClick={testAll}
+          disabled={testingAll}
+          className="text-xs bg-primary/15 hover:bg-primary/25 border border-primary/30 text-white px-4 py-2 rounded-xl font-semibold flex items-center gap-2 transition-all disabled:opacity-60"
+        >
+          {testingAll ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <RefreshCw className="w-3.5 h-3.5" />}
+          Test All
+        </button>
+      </div>
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+        {cards.map(card => (
+          <ConnectionCard
+            key={card.key}
+            card={card}
+            onTest={() => testProvider(card.provider, card.key)}
+            status={statuses[card.key] ?? "idle"}
+            detail={details[card.key] ?? ""}
+          />
+        ))}
+      </div>
+      <p className="text-xs text-muted-foreground text-center pt-2">
+        Configure providers in the <strong className="text-white/60">Providers</strong>, <strong className="text-white/60">VPS</strong>, and <strong className="text-white/60">Alerts</strong> tabs.
+      </p>
     </div>
   );
 }
