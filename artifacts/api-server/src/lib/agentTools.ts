@@ -439,6 +439,29 @@ function isVpsPathSafe(vpsDirectory: string, filePath: string): boolean {
   return filePath === vpsDirectory || filePath.startsWith(dir);
 }
 
+/**
+ * For git-type sites, ensure the repo is cloned on the VPS before SFTP ops.
+ * Returns an error string if clone failed, or null if already present or cloned ok.
+ */
+async function ensureGitRepoPresent(
+  config: { type: string; repoUrl?: string | null; branch: string; vpsDirectory: string },
+  creds: { id: number } & import("./sshManager").SshCredentials
+): Promise<string | null> {
+  if (config.type !== "git" || !config.repoUrl) return null;
+  const dir = config.vpsDirectory;
+  const check = await sshExec(creds.id, creds, `test -d "${dir}/.git" && echo yes || echo no`, 10000);
+  if (check.stdout.trim() === "yes") return null; // already present
+  const clone = await sshExec(
+    creds.id, creds,
+    `git clone "${config.repoUrl}" -b "${config.branch || "main"}" "${dir}" 2>&1`,
+    120000
+  );
+  if (clone.exitCode !== 0) {
+    return `git clone failed (exit ${clone.exitCode}): ${clone.stdout + clone.stderr}`;
+  }
+  return null;
+}
+
 export async function websiteReadFileTool(
   agentId: number,
   agentName: string,
@@ -455,6 +478,13 @@ export async function websiteReadFileTool(
 
   const creds = await getVpsCredentials();
   if (!creds) return { success: false, output: "", error: "VPS not configured" };
+
+  // For git-type sites: clone if repo isn't already present on VPS
+  const cloneErr = await ensureGitRepoPresent(
+    { type: config.type, repoUrl: config.repoUrl, branch: config.branch, vpsDirectory: config.vpsDirectory! },
+    creds
+  );
+  if (cloneErr) return { success: false, output: "", error: cloneErr };
 
   try {
     const content = await sftpReadFileById(creds.id, creds, filePath);
@@ -481,6 +511,13 @@ export async function websiteWriteFileTool(
 
   const creds = await getVpsCredentials();
   if (!creds) return { success: false, output: "", error: "VPS not configured" };
+
+  // For git-type sites: clone if repo isn't already present on VPS
+  const cloneErrW = await ensureGitRepoPresent(
+    { type: config.type, repoUrl: config.repoUrl, branch: config.branch, vpsDirectory: config.vpsDirectory! },
+    creds
+  );
+  if (cloneErrW) return { success: false, output: "", error: cloneErrW };
 
   try {
     // Read before-state for diff summary
@@ -532,7 +569,7 @@ export async function websiteDeployTool(
   agentId: number,
   agentName: string
 ): Promise<ToolResult> {
-  await logActivity(agentId, agentName, "website_deploy", "Running deploy command");
+  await logActivity(agentId, agentName, "website_deploy", "Running deploy");
 
   const config = await getWebsiteConfig(agentId);
   if (!config?.vpsDirectory) {
@@ -542,22 +579,97 @@ export async function websiteDeployTool(
   const creds = await getVpsCredentials();
   if (!creds) return { success: false, output: "", error: "VPS not configured" };
 
-  const cmd = config.deployCommand
-    ? `cd "${config.vpsDirectory}" && ${config.deployCommand} 2>&1`
-    : config.buildCommand
-    ? `cd "${config.vpsDirectory}" && ${config.buildCommand} 2>&1`
-    : null;
-
-  if (!cmd) return { success: false, output: "", error: "No deploy or build command configured" };
+  const dir = config.vpsDirectory;
+  const lines: string[] = [];
 
   try {
-    const result = await sshExec(creds.id, creds, cmd, 120000);
-    const output = result.stdout + result.stderr;
-    const success = result.exitCode === 0;
-    await logActivity(agentId, agentName, "website_deploy", success ? "Deploy succeeded" : `Deploy failed (exit ${result.exitCode})`);
-    return { success, output };
+    // For git-type sites: clone if missing, commit local edits, push, or pull
+    if (config.type === "git" && config.repoUrl) {
+      const branch = config.branch || "main";
+
+      const checkGit = await sshExec(creds.id, creds, `test -d "${dir}/.git" && echo yes || echo no`, 10000);
+      if (checkGit.stdout.trim() !== "yes") {
+        // Clone the repo
+        const clone = await sshExec(
+          creds.id, creds,
+          `git clone "${config.repoUrl}" -b "${branch}" "${dir}" 2>&1`,
+          120000
+        );
+        lines.push(`git clone: exit=${clone.exitCode}`);
+        lines.push(clone.stdout + clone.stderr);
+        if (clone.exitCode !== 0) {
+          await logActivity(agentId, agentName, "website_deploy", "Deploy failed: git clone error");
+          return { success: false, output: lines.join("\n"), error: "git clone failed" };
+        }
+      } else {
+        // Commit any local changes made by agent
+        const status = await sshExec(creds.id, creds, `cd "${dir}" && git status --porcelain 2>&1`, 10000);
+        if (status.stdout.trim()) {
+          const commit = await sshExec(
+            creds.id, creds,
+            `cd "${dir}" && git add -A && git commit -m "Agent deploy: $(date -u +%Y-%m-%dT%H:%M:%SZ)" 2>&1`,
+            30000
+          );
+          lines.push(`git commit: exit=${commit.exitCode}\n${commit.stdout + commit.stderr}`);
+          if (commit.exitCode !== 0) {
+            await logActivity(agentId, agentName, "website_deploy", "Deploy failed: git commit error");
+            return { success: false, output: lines.join("\n"), error: "git commit failed" };
+          }
+          // Push committed changes
+          const push = await sshExec(
+            creds.id, creds,
+            `cd "${dir}" && git push origin "${branch}" 2>&1`,
+            60000
+          );
+          lines.push(`git push: exit=${push.exitCode}\n${push.stdout + push.stderr}`);
+        } else {
+          // No local changes — pull from remote
+          const pull = await sshExec(
+            creds.id, creds,
+            `cd "${dir}" && git pull origin "${branch}" 2>&1`,
+            60000
+          );
+          lines.push(`git pull: exit=${pull.exitCode}\n${pull.stdout + pull.stderr}`);
+          if (pull.exitCode !== 0) {
+            await logActivity(agentId, agentName, "website_deploy", "Deploy failed: git pull error");
+            return { success: false, output: lines.join("\n"), error: "git pull failed" };
+          }
+        }
+      }
+    }
+
+    // Run build command if configured
+    if (config.buildCommand) {
+      const build = await sshExec(
+        creds.id, creds,
+        `cd "${dir}" && ${config.buildCommand} 2>&1`,
+        120000
+      );
+      lines.push(`build (exit=${build.exitCode}):\n${build.stdout + build.stderr}`);
+      if (build.exitCode !== 0) {
+        await logActivity(agentId, agentName, "website_deploy", "Deploy failed: build error");
+        return { success: false, output: lines.join("\n"), error: "Build failed" };
+      }
+    }
+
+    // Run deploy command if configured
+    if (config.deployCommand) {
+      const deploy = await sshExec(
+        creds.id, creds,
+        `cd "${dir}" && ${config.deployCommand} 2>&1`,
+        60000
+      );
+      lines.push(`deploy (exit=${deploy.exitCode}):\n${deploy.stdout + deploy.stderr}`);
+      if (deploy.exitCode !== 0) {
+        await logActivity(agentId, agentName, "website_deploy", "Deploy failed: deploy command error");
+        return { success: false, output: lines.join("\n"), error: "Deploy command failed" };
+      }
+    }
+
+    await logActivity(agentId, agentName, "website_deploy", "Deploy succeeded");
+    return { success: true, output: lines.join("\n") || "Deploy complete" };
   } catch (err) {
-    return { success: false, output: "", error: String(err) };
+    return { success: false, output: lines.join("\n"), error: String(err) };
   }
 }
 
