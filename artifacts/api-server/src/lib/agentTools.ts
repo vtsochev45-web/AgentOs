@@ -432,6 +432,13 @@ async function getWebsiteConfig(agentId: number) {
   return config;
 }
 
+function isVpsPathSafe(vpsDirectory: string, filePath: string): boolean {
+  if (!vpsDirectory || !filePath) return false;
+  if (filePath.includes("..") || filePath.includes("//")) return false;
+  const dir = vpsDirectory.endsWith("/") ? vpsDirectory : vpsDirectory + "/";
+  return filePath === vpsDirectory || filePath.startsWith(dir);
+}
+
 export async function websiteReadFileTool(
   agentId: number,
   agentName: string,
@@ -441,6 +448,10 @@ export async function websiteReadFileTool(
 
   const config = await getWebsiteConfig(agentId);
   if (!config?.vpsDirectory) return { success: false, output: "", error: "No website VPS directory configured" };
+
+  if (!isVpsPathSafe(config.vpsDirectory, filePath)) {
+    return { success: false, output: "", error: "Path is outside the configured website directory" };
+  }
 
   const creds = await getVpsCredentials();
   if (!creds) return { success: false, output: "", error: "VPS not configured" };
@@ -463,6 +474,10 @@ export async function websiteWriteFileTool(
 
   const config = await getWebsiteConfig(agentId);
   if (!config?.vpsDirectory) return { success: false, output: "", error: "No website VPS directory configured" };
+
+  if (!isVpsPathSafe(config.vpsDirectory, filePath)) {
+    return { success: false, output: "", error: "Path is outside the configured website directory" };
+  }
 
   const creds = await getVpsCredentials();
   if (!creds) return { success: false, output: "", error: "VPS not configured" };

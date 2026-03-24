@@ -15,6 +15,17 @@ import { persistAndEmitActivity } from "../lib/activityEmitter";
 
 const router: IRouter = Router();
 
+/**
+ * Returns true only if `filePath` is inside `vpsDirectory` (or equals it).
+ * Rejects paths containing ".." or double slashes to prevent traversal.
+ */
+function isPathContained(vpsDirectory: string, filePath: string): boolean {
+  if (!vpsDirectory || !filePath) return false;
+  if (filePath.includes("..") || filePath.includes("//")) return false;
+  const dir = vpsDirectory.endsWith("/") ? vpsDirectory : vpsDirectory + "/";
+  return filePath === vpsDirectory || filePath.startsWith(dir);
+}
+
 async function getVpsCreds(): Promise<(SshCredentials & { id: number }) | null> {
   const [config] = await db.select().from(vpsConfigTable).limit(1);
   if (!config || !config.encryptedCredential) return null;
@@ -178,6 +189,11 @@ router.get("/agents/:id/website/files", requireApiKey, async (req, res): Promise
   const PATH_RE = /^[\w./@~-][\w./@~/ -]*$/;
   if (!PATH_RE.test(dirPath)) { res.status(400).json({ error: "Invalid path" }); return; }
 
+  if (!isPathContained(config.vpsDirectory!, dirPath)) {
+    res.status(403).json({ error: "Path is outside the configured website directory" });
+    return;
+  }
+
   try {
     const files = await sftpListDirById(creds.id, creds, dirPath);
     res.json(files);
@@ -206,6 +222,11 @@ router.get("/agents/:id/website/files/content", requireApiKey, async (req, res):
   const PATH_RE = /^[\w./@~-][\w./@~/ -]*$/;
   if (!PATH_RE.test(filePath)) { res.status(400).json({ error: "Invalid path" }); return; }
 
+  if (!isPathContained(config.vpsDirectory!, filePath)) {
+    res.status(403).json({ error: "Path is outside the configured website directory" });
+    return;
+  }
+
   try {
     const content = await sftpReadFileById(creds.id, creds, filePath);
     res.json({ path: filePath, content });
@@ -233,6 +254,11 @@ router.put("/agents/:id/website/files/content", requireApiKey, async (req, res):
 
   const PATH_RE = /^[\w./@~-][\w./@~/ -]*$/;
   if (!PATH_RE.test(filePath)) { res.status(400).json({ error: "Invalid path" }); return; }
+
+  if (!isPathContained(config.vpsDirectory!, filePath)) {
+    res.status(403).json({ error: "Path is outside the configured website directory" });
+    return;
+  }
 
   try {
     await sftpWriteFileById(creds.id, creds, filePath, content);
@@ -348,7 +374,27 @@ router.post("/agents/:id/website/deploy", requireApiKey, async (req, res): Promi
   });
 
   try {
-    // Run build first if configured
+    // For git-type sites, pull latest from remote first
+    if (config.type === "git" && config.vpsDirectory) {
+      const branch = config.branch || "main";
+      send("log", `$ cd ${config.vpsDirectory} && git pull origin ${branch}`);
+      const pullResult = await sshExec(
+        creds.id, creds,
+        `cd "${config.vpsDirectory}" && git pull origin ${branch} 2>&1`,
+        60000
+      );
+      for (const line of (pullResult.stdout + pullResult.stderr).split("\n")) {
+        if (line.trim()) send("log", line);
+      }
+      if (pullResult.exitCode !== 0) {
+        send("error", `git pull failed (exit ${pullResult.exitCode})`);
+        res.end();
+        return;
+      }
+      send("log", "✓ git pull succeeded");
+    }
+
+    // Run build command if configured
     if (config.buildCommand) {
       send("log", `$ cd ${config.vpsDirectory} && ${config.buildCommand}`);
       const buildResult = await sshExec(
@@ -384,17 +430,6 @@ router.post("/agents/:id/website/deploy", requireApiKey, async (req, res): Promi
         return;
       }
       send("log", "✓ Deploy succeeded");
-    } else if (config.type === "git") {
-      // git push if no deploy command
-      send("log", `$ cd ${config.vpsDirectory} && git push`);
-      const pushResult = await sshExec(
-        creds.id, creds,
-        `cd "${config.vpsDirectory}" && git push 2>&1`,
-        30000
-      );
-      for (const line of (pushResult.stdout + pushResult.stderr).split("\n")) {
-        send("log", line);
-      }
     }
 
     // Health check after deploy

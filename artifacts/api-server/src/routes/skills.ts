@@ -33,7 +33,7 @@ router.get("/skills", requireApiKey, async (req, res): Promise<void> => {
 });
 
 router.get("/skills/:name", requireApiKey, async (req, res): Promise<void> => {
-  const { name } = req.params;
+  const name = req.params.name as string;
   if (!/^[\w-]+$/.test(name)) { res.status(400).json({ error: "Invalid skill name" }); return; }
   const skillMdPath = path.join(SKILLS_DIR, name, "SKILL.md");
   try {
@@ -45,7 +45,7 @@ router.get("/skills/:name", requireApiKey, async (req, res): Promise<void> => {
 });
 
 router.put("/skills/:name", requireApiKey, async (req, res): Promise<void> => {
-  const { name } = req.params;
+  const name = req.params.name as string;
   if (!/^[\w-]+$/.test(name)) { res.status(400).json({ error: "Invalid skill name" }); return; }
   const { content } = req.body as { content?: string };
   if (typeof content !== "string") { res.status(400).json({ error: "content is required" }); return; }

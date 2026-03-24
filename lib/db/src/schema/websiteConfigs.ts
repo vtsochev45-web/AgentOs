@@ -1,10 +1,10 @@
-import { pgTable, text, serial, timestamp } from "drizzle-orm/pg-core";
+import { pgTable, text, serial, timestamp, integer } from "drizzle-orm/pg-core";
 import { createInsertSchema } from "drizzle-zod";
 import { z } from "zod/v4";
 
 export const websiteConfigsTable = pgTable("website_configs", {
   id: serial("id").primaryKey(),
-  agentId: serial("agent_id").notNull(),
+  agentId: integer("agent_id").notNull(),
   type: text("type").notNull().default("vps-path"), // "vps-path" | "git"
   repoUrl: text("repo_url"),
   branch: text("branch").notNull().default("main"),
