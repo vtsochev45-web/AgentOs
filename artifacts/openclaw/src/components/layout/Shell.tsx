@@ -49,7 +49,7 @@ export function Shell({ children }: ShellProps) {
             className="text-xl font-bold tracking-tight text-white"
             style={{ fontFamily: "'Clash Display', system-ui, sans-serif" }}
           >
-            OpenClaw
+            Openclaw
           </h1>
         </Link>
         
@@ -108,6 +108,13 @@ export function Shell({ children }: ShellProps) {
 
       {/* Mobile Bottom Nav */}
       <nav className="md:hidden fixed bottom-0 left-0 right-0 glass-panel border-t border-white/10 z-50 px-1 py-2 flex justify-around items-center safe-area-bottom">
+        <Link href="/" className="flex flex-col items-center justify-center w-12 h-12">
+          <img
+            src={`${import.meta.env.BASE_URL}logo.svg`}
+            alt="Openclaw"
+            className="w-7 h-7"
+          />
+        </Link>
         {navItems.map((item) => {
           const isActive = location === item.path || (item.path !== "/" && location.startsWith(item.path));
           const Icon = item.icon;
