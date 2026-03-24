@@ -26,6 +26,29 @@ function isPathContained(vpsDirectory: string, filePath: string): boolean {
   return filePath === vpsDirectory || filePath.startsWith(dir);
 }
 
+/**
+ * For git-type sites, clone the repo on the VPS if not already present.
+ * Returns an error string on failure, null on success / not applicable.
+ */
+async function ensureGitCloned(
+  config: { type: string; repoUrl?: string | null; branch: string; vpsDirectory: string },
+  creds: SshCredentials & { id: number }
+): Promise<string | null> {
+  if (config.type !== "git" || !config.repoUrl) return null;
+  const dir = config.vpsDirectory;
+  const check = await sshExec(creds.id, creds, `test -d "${dir}/.git" && echo yes || echo no`, 10000);
+  if (check.stdout.trim() === "yes") return null; // already cloned
+  const clone = await sshExec(
+    creds.id, creds,
+    `git clone "${config.repoUrl}" -b "${config.branch || "main"}" "${dir}" 2>&1`,
+    120000
+  );
+  if (clone.exitCode !== 0) {
+    return `git clone failed (exit ${clone.exitCode}): ${clone.stdout + clone.stderr}`;
+  }
+  return null;
+}
+
 async function getVpsCreds(): Promise<(SshCredentials & { id: number }) | null> {
   const [config] = await db.select().from(vpsConfigTable).limit(1);
   if (!config || !config.encryptedCredential) return null;
@@ -193,6 +216,13 @@ router.get("/agents/:id/website/files", requireApiKey, async (req, res): Promise
     return;
   }
 
+  // For git-type sites, clone if the directory isn't already a git repo
+  const cloneErr = await ensureGitCloned(
+    { type: config.type, repoUrl: config.repoUrl, branch: config.branch, vpsDirectory: config.vpsDirectory! },
+    creds
+  );
+  if (cloneErr) { res.status(502).json({ error: cloneErr }); return; }
+
   try {
     const files = await sftpListDirById(creds.id, creds, dirPath);
     res.json(files);
@@ -226,6 +256,12 @@ router.get("/agents/:id/website/files/content", requireApiKey, async (req, res):
     return;
   }
 
+  const cloneErrR = await ensureGitCloned(
+    { type: config.type, repoUrl: config.repoUrl, branch: config.branch, vpsDirectory: config.vpsDirectory! },
+    creds
+  );
+  if (cloneErrR) { res.status(502).json({ error: cloneErrR }); return; }
+
   try {
     const content = await sftpReadFileById(creds.id, creds, filePath);
     res.json({ path: filePath, content });
@@ -258,6 +294,12 @@ router.put("/agents/:id/website/files/content", requireApiKey, async (req, res):
     res.status(403).json({ error: "Path is outside the configured website directory" });
     return;
   }
+
+  const cloneErrW = await ensureGitCloned(
+    { type: config.type, repoUrl: config.repoUrl, branch: config.branch, vpsDirectory: config.vpsDirectory! },
+    creds
+  );
+  if (cloneErrW) { res.status(502).json({ error: cloneErrW }); return; }
 
   try {
     // Read current content first to produce a diff

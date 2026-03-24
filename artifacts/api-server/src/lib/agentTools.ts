@@ -667,6 +667,13 @@ export async function websiteDeployTool(
     }
 
     await logActivity(agentId, agentName, "website_deploy", "Deploy succeeded");
+
+    // Run health check after deploy if siteUrl is configured
+    if (config.siteUrl) {
+      const healthResult = await websiteHealthCheckTool(agentId, agentName);
+      lines.push(`\nPost-deploy health check:\n${healthResult.output || healthResult.error || ""}`);
+    }
+
     return { success: true, output: lines.join("\n") || "Deploy complete" };
   } catch (err) {
     return { success: false, output: lines.join("\n"), error: String(err) };
@@ -689,10 +696,21 @@ export async function websiteHealthCheckTool(
     const r = await fetch(config.siteUrl, { signal: controller.signal });
     clearTimeout(timer);
     const latencyMs = Date.now() - start;
-    const output = `HTTP ${r.status} — ${r.ok ? "UP" : "DOWN"} — ${latencyMs}ms`;
-    return { success: r.ok, output };
+
+    // Parse page title from HTML response
+    let title: string | null = null;
+    try {
+      const text = await r.text();
+      const m = text.match(/<title[^>]*>([^<]*)<\/title>/i);
+      title = m?.[1]?.trim() ?? null;
+    } catch { /* ignore parse errors */ }
+
+    const status = r.status;
+    const up = r.ok;
+    const output = `HTTP ${status} — ${up ? "UP" : "DOWN"} — ${latencyMs}ms${title ? ` — "${title}"` : ""}`;
+    return { success: up, output };
   } catch (err) {
     const error = err instanceof Error ? err.message : String(err);
-    return { success: false, output: "", error };
+    return { success: false, output: `UNREACHABLE — ${error}`, error };
   }
 }
