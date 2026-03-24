@@ -10,5 +10,7 @@ export interface WebsiteHealth {
   ok: boolean;
   status?: number | null;
   latencyMs?: number | null;
+  title?: string | null;
+  url?: string | null;
   error?: string | null;
 }

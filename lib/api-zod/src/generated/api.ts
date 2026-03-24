@@ -640,6 +640,8 @@ export const GetWebsiteHealthResponse = zod.object({
   ok: zod.boolean(),
   status: zod.number().nullish(),
   latencyMs: zod.number().nullish(),
+  title: zod.string().nullish(),
+  url: zod.string().nullish(),
   error: zod.string().nullish(),
 });
 
@@ -652,8 +654,13 @@ export const GetWebsiteGitInfoParams = zod.object({
 
 export const GetWebsiteGitInfoResponse = zod.object({
   branch: zod.string(),
-  lastCommit: zod.string(),
-  uncommittedFiles: zod.array(zod.string()),
+  commit: zod.string().nullish().describe("Short SHA (8 chars)"),
+  commitMessage: zod.string().nullish(),
+  commitAuthor: zod.string().nullish(),
+  commitAge: zod.string().nullish(),
+  uncommittedFiles: zod
+    .number()
+    .describe("Count of uncommitted files (git status --short)"),
 });
 
 /**

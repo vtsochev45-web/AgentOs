@@ -1646,6 +1646,12 @@ components:
         latencyMs:
           type: integer
           nullable: true
+        title:
+          type: string
+          nullable: true
+        url:
+          type: string
+          nullable: true
         error:
           type: string
           nullable: true
@@ -1657,15 +1663,24 @@ components:
       properties:
         branch:
           type: string
-        lastCommit:
+        commit:
           type: string
+          nullable: true
+          description: Short SHA (8 chars)
+        commitMessage:
+          type: string
+          nullable: true
+        commitAuthor:
+          type: string
+          nullable: true
+        commitAge:
+          type: string
+          nullable: true
         uncommittedFiles:
-          type: array
-          items:
-            type: string
+          type: integer
+          description: Count of uncommitted files (git status --short)
       required:
         - branch
-        - lastCommit
         - uncommittedFiles
 
     WebsiteFile:

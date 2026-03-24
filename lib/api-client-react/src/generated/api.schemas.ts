@@ -379,13 +379,20 @@ export interface WebsiteHealth {
   ok: boolean;
   status?: number | null;
   latencyMs?: number | null;
+  title?: string | null;
+  url?: string | null;
   error?: string | null;
 }
 
 export interface WebsiteGitInfo {
   branch: string;
-  lastCommit: string;
-  uncommittedFiles: string[];
+  /** Short SHA (8 chars) */
+  commit?: string | null;
+  commitMessage?: string | null;
+  commitAuthor?: string | null;
+  commitAge?: string | null;
+  /** Count of uncommitted files (git status --short) */
+  uncommittedFiles: number;
 }
 
 export type WebsiteFileType =
