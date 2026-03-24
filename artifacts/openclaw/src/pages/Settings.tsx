@@ -197,7 +197,7 @@ function OpenclawTab({ settings }: { settings?: AppSettings }) {
               <label className={labelCls}>Instance URL</label>
               <input {...form.register("openclawInstanceUrl")} className={inputCls} placeholder="http://your-vps-ip:3000" />
               {form.formState.errors.openclawInstanceUrl && (
-                <p className="text-red-400 text-xs mt-1">{form.formState.errors.openclawInstanceUrl.message}</p>
+                <p className="text-red-400 text-xs mt-1">{String(form.formState.errors.openclawInstanceUrl.message ?? "")}</p>
               )}
             </div>
             <div>
