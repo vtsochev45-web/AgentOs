@@ -586,18 +586,21 @@ export const GetWebsiteConfigParams = zod.object({
   id: zod.coerce.number(),
 });
 
-export const GetWebsiteConfigResponse = zod.object({
-  id: zod.number(),
-  agentId: zod.number(),
-  type: zod.enum(["vps-path", "git"]),
-  repoUrl: zod.string().nullish(),
-  branch: zod.string(),
-  vpsDirectory: zod.string().nullish(),
-  siteUrl: zod.string().nullish(),
-  buildCommand: zod.string().nullish(),
-  deployCommand: zod.string().nullish(),
-  updatedAt: zod.date().optional(),
-});
+export const GetWebsiteConfigResponse = zod.union([
+  zod.object({
+    id: zod.number(),
+    agentId: zod.number(),
+    type: zod.enum(["vps-path", "git"]),
+    repoUrl: zod.string().nullish(),
+    branch: zod.string(),
+    vpsDirectory: zod.string().nullish(),
+    siteUrl: zod.string().nullish(),
+    buildCommand: zod.string().nullish(),
+    deployCommand: zod.string().nullish(),
+    updatedAt: zod.date().optional(),
+  }),
+  zod.null(),
+]);
 
 /**
  * @summary Create or update website config for an agent

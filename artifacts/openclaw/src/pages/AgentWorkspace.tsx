@@ -16,7 +16,6 @@ import {
   Send,
   Sparkles,
   ServerCrash,
-  Globe,
   Bot,
   GitBranch,
   FileText,
@@ -509,7 +508,7 @@ export default function AgentWorkspace() {
                       <div className="flex flex-wrap gap-2 mt-4">
                         {streamData.sources.map((src, idx) => (
                           <div key={idx} className="flex items-center gap-1.5 px-2.5 py-1 rounded-md bg-black/30 border border-white/5 text-xs text-white/70">
-                            <Globe className="w-3 h-3 text-primary" /> [{idx + 1}] {new URL(src.url).hostname.replace("www.", "")}
+                            <Globe2 className="w-3 h-3 text-primary" /> [{idx + 1}] {new URL(src.url).hostname.replace("www.", "")}
                           </div>
                         ))}
                       </div>
@@ -714,7 +713,7 @@ export default function AgentWorkspace() {
                     )}
                     {websiteConfig.siteUrl && (
                       <a href={websiteConfig.siteUrl} target="_blank" rel="noreferrer" className="mt-3 flex items-center gap-1 text-xs text-primary hover:underline truncate">
-                        <Globe className="w-3 h-3" /> {websiteConfig.siteUrl}
+                        <Globe2 className="w-3 h-3" /> {websiteConfig.siteUrl}
                       </a>
                     )}
                   </div>

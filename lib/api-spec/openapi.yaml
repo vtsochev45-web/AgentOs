@@ -786,13 +786,13 @@ paths:
             type: integer
       responses:
         "200":
-          description: Website config (null if not set)
+          description: Website config, or null if not yet configured
           content:
             application/json:
               schema:
-                $ref: "#/components/schemas/WebsiteConfig"
-        "404":
-          description: Not found
+                oneOf:
+                  - $ref: "#/components/schemas/WebsiteConfig"
+                  - type: "null"
     put:
       operationId: updateWebsiteConfig
       tags: [website]

@@ -53,8 +53,7 @@ router.get("/agents/:id/website", requireApiKey, async (req, res): Promise<void>
     .from(websiteConfigsTable)
     .where(eq(websiteConfigsTable.agentId, agentId))
     .limit(1);
-  if (!config) { res.status(404).json({ error: "No website config" }); return; }
-  res.json(config);
+  res.json(config ?? null);
 });
 
 /* ── PUT website config ─────────────────────────────────────────── */

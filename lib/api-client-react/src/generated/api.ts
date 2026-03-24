@@ -3297,8 +3297,8 @@ export const getGetWebsiteConfigUrl = (id: number) => {
 export const getWebsiteConfig = async (
   id: number,
   options?: RequestInit,
-): Promise<WebsiteConfig> => {
-  return customFetch<WebsiteConfig>(getGetWebsiteConfigUrl(id), {
+): Promise<WebsiteConfig | null> => {
+  return customFetch<WebsiteConfig | null>(getGetWebsiteConfigUrl(id), {
     ...options,
     method: "GET",
   });
@@ -3310,7 +3310,7 @@ export const getGetWebsiteConfigQueryKey = (id: number) => {
 
 export const getGetWebsiteConfigQueryOptions = <
   TData = Awaited<ReturnType<typeof getWebsiteConfig>>,
-  TError = ErrorType<void>,
+  TError = ErrorType<unknown>,
 >(
   id: number,
   options?: {
@@ -3345,7 +3345,7 @@ export const getGetWebsiteConfigQueryOptions = <
 export type GetWebsiteConfigQueryResult = NonNullable<
   Awaited<ReturnType<typeof getWebsiteConfig>>
 >;
-export type GetWebsiteConfigQueryError = ErrorType<void>;
+export type GetWebsiteConfigQueryError = ErrorType<unknown>;
 
 /**
  * @summary Get website config for an agent
@@ -3353,7 +3353,7 @@ export type GetWebsiteConfigQueryError = ErrorType<void>;
 
 export function useGetWebsiteConfig<
   TData = Awaited<ReturnType<typeof getWebsiteConfig>>,
-  TError = ErrorType<void>,
+  TError = ErrorType<unknown>,
 >(
   id: number,
   options?: {
