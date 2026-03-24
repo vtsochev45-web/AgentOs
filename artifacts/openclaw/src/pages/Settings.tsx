@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useCallback } from "react";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
@@ -12,6 +12,9 @@ import {
   Webhook, Key, Link2, RefreshCw, CheckCircle2, XCircle, BookOpen,
   Loader2, ChevronRight, AlertCircle, Zap, PlugZap,
 } from "lucide-react";
+import CodeMirror from "@uiw/react-codemirror";
+import { markdown } from "@codemirror/lang-markdown";
+import { dracula } from "@uiw/codemirror-theme-dracula";
 
 type Tab = "openclaw" | "providers" | "vps" | "skills" | "connections" | "notifications";
 
@@ -268,6 +271,7 @@ function ProvidersTab({ settings }: { settings?: AppSettings }) {
   const queryClient = useQueryClient();
   const [openaiStatus, setOpenaiStatus] = useState<ConnectionStatus>("idle");
   const [anthropicStatus, setAnthropicStatus] = useState<ConnectionStatus>("idle");
+  const [braveStatus, setBraveStatus] = useState<ConnectionStatus>("idle");
 
   const form = useForm({
     resolver: zodResolver(providersSchema),
@@ -294,7 +298,7 @@ function ProvidersTab({ settings }: { settings?: AppSettings }) {
     setOpenaiStatus("loading");
     try {
       const res = await apiFetch("/api/settings/test/openai", { method: "POST" });
-      const data = await res.json();
+      const data = await res.json() as { ok: boolean };
       setOpenaiStatus(data.ok ? "ok" : "error");
     } catch { setOpenaiStatus("error"); }
   };
@@ -303,9 +307,18 @@ function ProvidersTab({ settings }: { settings?: AppSettings }) {
     setAnthropicStatus("loading");
     try {
       const res = await apiFetch("/api/settings/test/anthropic", { method: "POST" });
-      const data = await res.json();
+      const data = await res.json() as { ok: boolean };
       setAnthropicStatus(data.ok ? "ok" : "error");
     } catch { setAnthropicStatus("error"); }
+  };
+
+  const testBrave = async () => {
+    setBraveStatus("loading");
+    try {
+      const res = await apiFetch("/api/settings/test/brave", { method: "POST" });
+      const data = await res.json() as { ok: boolean };
+      setBraveStatus(data.ok ? "ok" : "error");
+    } catch { setBraveStatus("error"); }
   };
 
   const AI_MODELS = [
@@ -396,9 +409,17 @@ function ProvidersTab({ settings }: { settings?: AppSettings }) {
             </select>
           </div>
           {form.watch("searchProvider") === "brave" && (
-            <div>
-              <label className={labelCls}>Brave API Key {(settings as any)?.braveApiKeyConfigured && <span className="normal-case font-normal text-muted-foreground">(blank = keep)</span>}</label>
-              <input {...form.register("braveApiKey")} className={inputCls} placeholder="BSA…" />
+            <div className="space-y-3">
+              <div>
+                <label className={labelCls}>Brave API Key {(settings as any)?.braveApiKeyConfigured && <span className="normal-case font-normal text-muted-foreground">(blank = keep)</span>}</label>
+                <input {...form.register("braveApiKey")} className={inputCls} placeholder="BSA…" />
+              </div>
+              <div className="flex items-center gap-3">
+                <button type="button" onClick={testBrave} disabled={braveStatus === "loading" || !(settings as any)?.braveApiKeyConfigured} className="text-xs bg-white/5 hover:bg-white/10 border border-white/10 text-white px-3 py-1.5 rounded-lg flex items-center gap-1.5 transition-all disabled:opacity-40">
+                  <Zap className="w-3 h-3" /> Test Brave
+                </button>
+                <StatusBadge status={braveStatus} />
+              </div>
             </div>
           )}
         </div>
@@ -459,13 +480,13 @@ function VpsTab({ initialData }: { initialData?: VpsConfig }) {
     setTestDetail("");
     try {
       const res = await apiFetch("/api/vps/test", { method: "POST" });
-      const d = await res.json().catch(() => ({}));
-      if ((d as any).success) {
+      const d = await res.json().catch(() => ({ success: false, message: "" })) as { success: boolean; message?: string };
+      if (d.success) {
         setTestStatus("ok");
-        setTestDetail((d as any).message ?? "SSH handshake succeeded");
+        setTestDetail(d.message ?? "SSH handshake succeeded");
       } else {
         setTestStatus("error");
-        setTestDetail((d as any).message ?? `HTTP ${res.status}`);
+        setTestDetail(d.message ?? `HTTP ${res.status}`);
       }
     } catch (e) {
       setTestStatus("error");
@@ -564,7 +585,7 @@ function SkillsTab() {
     setLoadingContent(true);
     try {
       const res = await apiFetch(`/api/skills/${name}`);
-      const data = await res.json();
+      const data = await res.json() as { content?: string };
       setContent(data.content ?? "");
     } catch {
       toast({ title: "Failed to load skill", variant: "destructive" });
@@ -593,6 +614,10 @@ function SkillsTab() {
       setSaving(false);
     }
   };
+
+  const onEditorChange = useCallback((value: string) => {
+    setContent(value);
+  }, []);
 
   return (
     <div className="flex flex-col md:flex-row gap-4 min-h-[500px]">
@@ -630,7 +655,7 @@ function SkillsTab() {
       </div>
 
       {/* Editor */}
-      <div className={`${sectionCls} flex-1 flex flex-col min-h-[400px]`}>
+      <div className={`${sectionCls} flex-1 flex flex-col min-h-[400px] overflow-hidden`}>
         {!selected ? (
           <div className="flex-1 flex items-center justify-center text-muted-foreground text-sm">
             <div className="text-center">
@@ -652,12 +677,21 @@ function SkillsTab() {
                 {saving ? "Saving…" : "Save"}
               </button>
             </div>
-            <textarea
-              value={content}
-              onChange={e => setContent(e.target.value)}
-              className="flex-1 w-full bg-transparent text-white/90 font-mono text-xs p-4 resize-none focus:outline-none leading-relaxed custom-scrollbar"
-              spellCheck={false}
-            />
+            <div className="flex-1 overflow-auto">
+              <CodeMirror
+                value={content}
+                extensions={[markdown()]}
+                theme={dracula}
+                onChange={onEditorChange}
+                basicSetup={{
+                  lineNumbers: true,
+                  foldGutter: false,
+                  highlightActiveLine: true,
+                  highlightSelectionMatches: true,
+                }}
+                style={{ fontSize: "12px", height: "100%", minHeight: "350px" }}
+              />
+            </div>
           </>
         )}
       </div>
@@ -739,7 +773,6 @@ function ConnectionsTab({ settings, vpsConfig }: { settings?: AppSettings; vpsCo
   const [details, setDetails] = useState<Record<string, string>>({});
   const [testingAll, setTestingAll] = useState(false);
 
-  const s = settings as any;
   const cards: IntegrationCard[] = [
     {
       key: "openai",
@@ -748,7 +781,7 @@ function ConnectionsTab({ settings, vpsConfig }: { settings?: AppSettings; vpsCo
       iconColor: "#10b981",
       provider: "openai",
       description: "GPT models & embeddings",
-      configured: !!s?.openaiApiKeyConfigured,
+      configured: !!settings?.openaiApiKeyConfigured,
     },
     {
       key: "anthropic",
@@ -757,7 +790,7 @@ function ConnectionsTab({ settings, vpsConfig }: { settings?: AppSettings; vpsCo
       iconColor: "#f97316",
       provider: "anthropic",
       description: "Claude models",
-      configured: !!s?.anthropicApiKeyConfigured,
+      configured: !!settings?.anthropicApiKeyConfigured,
     },
     {
       key: "vps",
@@ -775,7 +808,7 @@ function ConnectionsTab({ settings, vpsConfig }: { settings?: AppSettings; vpsCo
       iconColor: "#fb923c",
       provider: "brave",
       description: "Real-time web search",
-      configured: !!s?.braveApiKeyConfigured,
+      configured: !!settings?.braveApiKeyConfigured,
     },
     {
       key: "smtp",
@@ -783,8 +816,8 @@ function ConnectionsTab({ settings, vpsConfig }: { settings?: AppSettings; vpsCo
       icon: Mail,
       iconColor: "#60a5fa",
       provider: "smtp",
-      description: s?.smtpHost ? `${s.smtpHost}:${s.smtpPort ?? 587}` : "Email notification relay",
-      configured: !!s?.smtpConfigured,
+      description: settings?.smtpHost ? `${settings.smtpHost}:${settings.smtpPort ?? 587}` : "Email notification relay",
+      configured: !!settings?.smtpConfigured,
     },
     {
       key: "webhook",
@@ -792,8 +825,8 @@ function ConnectionsTab({ settings, vpsConfig }: { settings?: AppSettings; vpsCo
       icon: Webhook,
       iconColor: "#a78bfa",
       provider: "webhook",
-      description: s?.webhookUrl ? s.webhookUrl.substring(0, 40) + (s.webhookUrl.length > 40 ? "…" : "") : "POST event notifications",
-      configured: !!s?.webhookUrl,
+      description: settings?.webhookUrl ? settings.webhookUrl.substring(0, 40) + (settings.webhookUrl.length > 40 ? "…" : "") : "POST event notifications",
+      configured: !!settings?.webhookUrl,
     },
   ];
 
@@ -802,7 +835,7 @@ function ConnectionsTab({ settings, vpsConfig }: { settings?: AppSettings; vpsCo
     setDetails(p => ({ ...p, [key]: "" }));
     try {
       const res = await apiFetch(`/api/settings/test/${provider}`, { method: "POST" });
-      const data = await res.json();
+      const data = await res.json() as { ok: boolean; message?: string; error?: string };
       setStatuses(p => ({ ...p, [key]: data.ok ? "ok" : "error" }));
       setDetails(p => ({ ...p, [key]: data.message ?? data.error ?? (data.ok ? "Connected" : "Failed") }));
     } catch (e) {

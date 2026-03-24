@@ -1427,6 +1427,10 @@ components:
       properties:
         aiModel:
           type: string
+        openaiApiKeyConfigured:
+          type: boolean
+        anthropicApiKeyConfigured:
+          type: boolean
         smtpHost:
           type: string
           nullable: true
@@ -1446,11 +1450,19 @@ components:
           enum: [duckduckgo, brave]
         braveApiKeyConfigured:
           type: boolean
+        openclawInstanceUrl:
+          type: string
+          nullable: true
+        openclawApiKeyConfigured:
+          type: boolean
       required:
         - aiModel
+        - openaiApiKeyConfigured
+        - anthropicApiKeyConfigured
         - smtpConfigured
         - searchProvider
         - braveApiKeyConfigured
+        - openclawApiKeyConfigured
 
     SaveSettingsBody:
       type: object

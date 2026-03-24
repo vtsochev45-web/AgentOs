@@ -456,6 +456,8 @@ export const TailVpsLogQueryParams = zod.object({
  */
 export const GetSettingsResponse = zod.object({
   aiModel: zod.string(),
+  openaiApiKeyConfigured: zod.boolean(),
+  anthropicApiKeyConfigured: zod.boolean(),
   smtpHost: zod.string().nullish(),
   smtpPort: zod.number().nullish(),
   smtpUser: zod.string().nullish(),
@@ -463,6 +465,8 @@ export const GetSettingsResponse = zod.object({
   webhookUrl: zod.string().nullish(),
   searchProvider: zod.enum(["duckduckgo", "brave"]),
   braveApiKeyConfigured: zod.boolean(),
+  openclawInstanceUrl: zod.string().nullish(),
+  openclawApiKeyConfigured: zod.boolean(),
 });
 
 /**
@@ -481,6 +485,8 @@ export const SaveSettingsBody = zod.object({
 
 export const SaveSettingsResponse = zod.object({
   aiModel: zod.string(),
+  openaiApiKeyConfigured: zod.boolean(),
+  anthropicApiKeyConfigured: zod.boolean(),
   smtpHost: zod.string().nullish(),
   smtpPort: zod.number().nullish(),
   smtpUser: zod.string().nullish(),
@@ -488,6 +494,8 @@ export const SaveSettingsResponse = zod.object({
   webhookUrl: zod.string().nullish(),
   searchProvider: zod.enum(["duckduckgo", "brave"]),
   braveApiKeyConfigured: zod.boolean(),
+  openclawInstanceUrl: zod.string().nullish(),
+  openclawApiKeyConfigured: zod.boolean(),
 });
 
 /**

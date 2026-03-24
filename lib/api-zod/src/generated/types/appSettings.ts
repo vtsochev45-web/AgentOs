@@ -9,6 +9,8 @@ import type { AppSettingsSearchProvider } from "./appSettingsSearchProvider";
 
 export interface AppSettings {
   aiModel: string;
+  openaiApiKeyConfigured: boolean;
+  anthropicApiKeyConfigured: boolean;
   smtpHost?: string | null;
   smtpPort?: number | null;
   smtpUser?: string | null;
@@ -16,4 +18,6 @@ export interface AppSettings {
   webhookUrl?: string | null;
   searchProvider: AppSettingsSearchProvider;
   braveApiKeyConfigured: boolean;
+  openclawInstanceUrl?: string | null;
+  openclawApiKeyConfigured: boolean;
 }
