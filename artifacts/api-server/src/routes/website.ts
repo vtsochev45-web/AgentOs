@@ -261,6 +261,14 @@ router.put("/agents/:id/website/files/content", requireApiKey, async (req, res):
   }
 
   try {
+    // Read current content first to produce a diff
+    let before = "";
+    try {
+      before = await sftpReadFileById(creds.id, creds, filePath);
+    } catch {
+      // File doesn't exist yet — before stays empty
+    }
+
     await sftpWriteFileById(creds.id, creds, filePath, content);
     await persistAndEmitActivity({
       timestamp: new Date().toISOString(),
@@ -269,7 +277,8 @@ router.put("/agents/:id/website/files/content", requireApiKey, async (req, res):
       actionType: "website_edit",
       detail: `Edited ${filePath}`,
     });
-    res.json({ ok: true, path: filePath });
+
+    res.json({ path: filePath, before, after: content, changed: before !== content });
   } catch (err) {
     res.status(500).json({ error: String(err) });
   }
@@ -374,24 +383,83 @@ router.post("/agents/:id/website/deploy", requireApiKey, async (req, res): Promi
   });
 
   try {
-    // For git-type sites, pull latest from remote first
-    if (config.type === "git" && config.vpsDirectory) {
+    // For git-type sites: clone if missing, commit local edits, pull, push
+    if (config.type === "git" && config.repoUrl && config.vpsDirectory) {
       const branch = config.branch || "main";
-      send("log", `$ cd ${config.vpsDirectory} && git pull origin ${branch}`);
-      const pullResult = await sshExec(
-        creds.id, creds,
-        `cd "${config.vpsDirectory}" && git pull origin ${branch} 2>&1`,
-        60000
-      );
-      for (const line of (pullResult.stdout + pullResult.stderr).split("\n")) {
-        if (line.trim()) send("log", line);
+      const dir = config.vpsDirectory;
+
+      // Step 1: Clone repo if directory is not already a git repo
+      const checkGit = await sshExec(creds.id, creds, `test -d "${dir}/.git" && echo yes || echo no`, 10000);
+      if (checkGit.stdout.trim() !== "yes") {
+        send("log", `$ git clone ${config.repoUrl} -b ${branch} ${dir}`);
+        const cloneResult = await sshExec(
+          creds.id, creds,
+          `git clone "${config.repoUrl}" -b "${branch}" "${dir}" 2>&1`,
+          120000
+        );
+        for (const line of (cloneResult.stdout + cloneResult.stderr).split("\n")) {
+          if (line.trim()) send("log", line);
+        }
+        if (cloneResult.exitCode !== 0) {
+          send("error", `git clone failed (exit ${cloneResult.exitCode})`);
+          res.end();
+          return;
+        }
+        send("log", "✓ git clone succeeded");
+      } else {
+        // Step 2: Commit any local edits made by the agent
+        const statusResult = await sshExec(creds.id, creds, `cd "${dir}" && git status --porcelain 2>&1`, 10000);
+        if (statusResult.stdout.trim()) {
+          send("log", `Detected local changes — committing:\n${statusResult.stdout.trim()}`);
+          const commitResult = await sshExec(
+            creds.id, creds,
+            `cd "${dir}" && git add -A && git commit -m "Agent deploy: $(date -u +%Y-%m-%dT%H:%M:%SZ)" 2>&1`,
+            30000
+          );
+          for (const line of (commitResult.stdout + commitResult.stderr).split("\n")) {
+            if (line.trim()) send("log", line);
+          }
+          if (commitResult.exitCode !== 0) {
+            send("error", `git commit failed (exit ${commitResult.exitCode})`);
+            res.end();
+            return;
+          }
+          send("log", "✓ Local changes committed");
+
+          // Step 3: Push committed changes to remote
+          send("log", `$ cd ${dir} && git push origin ${branch}`);
+          const pushResult = await sshExec(
+            creds.id, creds,
+            `cd "${dir}" && git push origin "${branch}" 2>&1`,
+            60000
+          );
+          for (const line of (pushResult.stdout + pushResult.stderr).split("\n")) {
+            if (line.trim()) send("log", line);
+          }
+          if (pushResult.exitCode !== 0) {
+            send("error", `git push failed (exit ${pushResult.exitCode}) — continuing build anyway`);
+          } else {
+            send("log", "✓ git push succeeded");
+          }
+        } else {
+          // No local changes — just pull latest from remote
+          send("log", `$ cd ${dir} && git pull origin ${branch}`);
+          const pullResult = await sshExec(
+            creds.id, creds,
+            `cd "${dir}" && git pull origin "${branch}" 2>&1`,
+            60000
+          );
+          for (const line of (pullResult.stdout + pullResult.stderr).split("\n")) {
+            if (line.trim()) send("log", line);
+          }
+          if (pullResult.exitCode !== 0) {
+            send("error", `git pull failed (exit ${pullResult.exitCode})`);
+            res.end();
+            return;
+          }
+          send("log", "✓ git pull succeeded");
+        }
       }
-      if (pullResult.exitCode !== 0) {
-        send("error", `git pull failed (exit ${pullResult.exitCode})`);
-        res.end();
-        return;
-      }
-      send("log", "✓ git pull succeeded");
     }
 
     // Run build command if configured

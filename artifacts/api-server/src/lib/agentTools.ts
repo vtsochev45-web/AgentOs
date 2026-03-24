@@ -483,8 +483,17 @@ export async function websiteWriteFileTool(
   if (!creds) return { success: false, output: "", error: "VPS not configured" };
 
   try {
+    // Read before-state for diff summary
+    let before = "";
+    try { before = await sftpReadFileById(creds.id, creds, filePath); } catch { /* new file */ }
+
     await sftpWriteFileById(creds.id, creds, filePath, content);
-    return { success: true, output: `Written ${content.length} chars to ${filePath}` };
+
+    const changed = before !== content;
+    const summary = changed
+      ? `Written ${content.length} chars to ${filePath} (was ${before.length} chars — ${changed ? "changed" : "no change"})`
+      : `Written ${filePath} — content unchanged`;
+    return { success: true, output: summary };
   } catch (err) {
     return { success: false, output: "", error: String(err) };
   }

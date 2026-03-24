@@ -336,6 +336,85 @@ export interface OpenaiError {
   error: string;
 }
 
+export type WebsiteConfigType =
+  (typeof WebsiteConfigType)[keyof typeof WebsiteConfigType];
+
+export const WebsiteConfigType = {
+  "vps-path": "vps-path",
+  git: "git",
+} as const;
+
+export interface WebsiteConfig {
+  id: number;
+  agentId: number;
+  type: WebsiteConfigType;
+  repoUrl?: string | null;
+  branch: string;
+  vpsDirectory?: string | null;
+  siteUrl?: string | null;
+  buildCommand?: string | null;
+  deployCommand?: string | null;
+  updatedAt?: string;
+}
+
+export type WebsiteConfigInputType =
+  (typeof WebsiteConfigInputType)[keyof typeof WebsiteConfigInputType];
+
+export const WebsiteConfigInputType = {
+  "vps-path": "vps-path",
+  git: "git",
+} as const;
+
+export interface WebsiteConfigInput {
+  type?: WebsiteConfigInputType;
+  repoUrl?: string;
+  branch?: string;
+  vpsDirectory?: string;
+  siteUrl?: string;
+  buildCommand?: string;
+  deployCommand?: string;
+}
+
+export interface WebsiteHealth {
+  ok: boolean;
+  status?: number | null;
+  latencyMs?: number | null;
+  error?: string | null;
+}
+
+export interface WebsiteGitInfo {
+  branch: string;
+  lastCommit: string;
+  uncommittedFiles: string[];
+}
+
+export type WebsiteFileType =
+  (typeof WebsiteFileType)[keyof typeof WebsiteFileType];
+
+export const WebsiteFileType = {
+  file: "file",
+  directory: "directory",
+} as const;
+
+export interface WebsiteFile {
+  name: string;
+  path: string;
+  type: WebsiteFileType;
+  size?: number;
+}
+
+export interface WebsiteFileContent {
+  path: string;
+  content: string;
+}
+
+export interface WebsiteFileDiff {
+  path: string;
+  before: string;
+  after: string;
+  changed: boolean;
+}
+
 export type ListActivityParams = {
   limit?: number;
   agentId?: number;
@@ -356,4 +435,15 @@ export type DeleteVpsFileParams = {
 export type TailVpsLogParams = {
   path: string;
   lines?: number;
+};
+
+export type ListWebsiteFilesParams = {
+  /**
+   * Subdirectory path (must be within vpsDirectory)
+   */
+  path?: string;
+};
+
+export type GetWebsiteFileContentParams = {
+  path: string;
 };

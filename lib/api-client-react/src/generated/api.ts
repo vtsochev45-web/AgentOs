@@ -31,9 +31,11 @@ import type {
   ExecVpsCommandBody,
   GenerateOpenaiImageBody,
   GenerateOpenaiImageResponse,
+  GetWebsiteFileContentParams,
   HealthStatus,
   ListActivityParams,
   ListVpsFilesParams,
+  ListWebsiteFilesParams,
   OpenaiConversation,
   OpenaiConversationWithMessages,
   OpenaiError,
@@ -54,6 +56,13 @@ import type {
   VpsService,
   VpsStats,
   VpsTestResult,
+  WebsiteConfig,
+  WebsiteConfigInput,
+  WebsiteFile,
+  WebsiteFileContent,
+  WebsiteFileDiff,
+  WebsiteGitInfo,
+  WebsiteHealth,
   WriteVpsFileBody,
 } from "./api.schemas";
 
@@ -3276,4 +3285,840 @@ export const useGenerateOpenaiImage = <
   TContext
 > => {
   return useMutation(getGenerateOpenaiImageMutationOptions(options));
+};
+
+/**
+ * @summary Get website config for an agent
+ */
+export const getGetWebsiteConfigUrl = (id: number) => {
+  return `/api/agents/${id}/website`;
+};
+
+export const getWebsiteConfig = async (
+  id: number,
+  options?: RequestInit,
+): Promise<WebsiteConfig> => {
+  return customFetch<WebsiteConfig>(getGetWebsiteConfigUrl(id), {
+    ...options,
+    method: "GET",
+  });
+};
+
+export const getGetWebsiteConfigQueryKey = (id: number) => {
+  return [`/api/agents/${id}/website`] as const;
+};
+
+export const getGetWebsiteConfigQueryOptions = <
+  TData = Awaited<ReturnType<typeof getWebsiteConfig>>,
+  TError = ErrorType<void>,
+>(
+  id: number,
+  options?: {
+    query?: UseQueryOptions<
+      Awaited<ReturnType<typeof getWebsiteConfig>>,
+      TError,
+      TData
+    >;
+    request?: SecondParameter<typeof customFetch>;
+  },
+) => {
+  const { query: queryOptions, request: requestOptions } = options ?? {};
+
+  const queryKey = queryOptions?.queryKey ?? getGetWebsiteConfigQueryKey(id);
+
+  const queryFn: QueryFunction<
+    Awaited<ReturnType<typeof getWebsiteConfig>>
+  > = ({ signal }) => getWebsiteConfig(id, { signal, ...requestOptions });
+
+  return {
+    queryKey,
+    queryFn,
+    enabled: !!id,
+    ...queryOptions,
+  } as UseQueryOptions<
+    Awaited<ReturnType<typeof getWebsiteConfig>>,
+    TError,
+    TData
+  > & { queryKey: QueryKey };
+};
+
+export type GetWebsiteConfigQueryResult = NonNullable<
+  Awaited<ReturnType<typeof getWebsiteConfig>>
+>;
+export type GetWebsiteConfigQueryError = ErrorType<void>;
+
+/**
+ * @summary Get website config for an agent
+ */
+
+export function useGetWebsiteConfig<
+  TData = Awaited<ReturnType<typeof getWebsiteConfig>>,
+  TError = ErrorType<void>,
+>(
+  id: number,
+  options?: {
+    query?: UseQueryOptions<
+      Awaited<ReturnType<typeof getWebsiteConfig>>,
+      TError,
+      TData
+    >;
+    request?: SecondParameter<typeof customFetch>;
+  },
+): UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+  const queryOptions = getGetWebsiteConfigQueryOptions(id, options);
+
+  const query = useQuery(queryOptions) as UseQueryResult<TData, TError> & {
+    queryKey: QueryKey;
+  };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
+
+/**
+ * @summary Create or update website config for an agent
+ */
+export const getUpdateWebsiteConfigUrl = (id: number) => {
+  return `/api/agents/${id}/website`;
+};
+
+export const updateWebsiteConfig = async (
+  id: number,
+  websiteConfigInput: WebsiteConfigInput,
+  options?: RequestInit,
+): Promise<WebsiteConfig> => {
+  return customFetch<WebsiteConfig>(getUpdateWebsiteConfigUrl(id), {
+    ...options,
+    method: "PUT",
+    headers: { "Content-Type": "application/json", ...options?.headers },
+    body: JSON.stringify(websiteConfigInput),
+  });
+};
+
+export const getUpdateWebsiteConfigMutationOptions = <
+  TError = ErrorType<unknown>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof updateWebsiteConfig>>,
+    TError,
+    { id: number; data: BodyType<WebsiteConfigInput> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof updateWebsiteConfig>>,
+  TError,
+  { id: number; data: BodyType<WebsiteConfigInput> },
+  TContext
+> => {
+  const mutationKey = ["updateWebsiteConfig"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof updateWebsiteConfig>>,
+    { id: number; data: BodyType<WebsiteConfigInput> }
+  > = (props) => {
+    const { id, data } = props ?? {};
+
+    return updateWebsiteConfig(id, data, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type UpdateWebsiteConfigMutationResult = NonNullable<
+  Awaited<ReturnType<typeof updateWebsiteConfig>>
+>;
+export type UpdateWebsiteConfigMutationBody = BodyType<WebsiteConfigInput>;
+export type UpdateWebsiteConfigMutationError = ErrorType<unknown>;
+
+/**
+ * @summary Create or update website config for an agent
+ */
+export const useUpdateWebsiteConfig = <
+  TError = ErrorType<unknown>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof updateWebsiteConfig>>,
+    TError,
+    { id: number; data: BodyType<WebsiteConfigInput> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof updateWebsiteConfig>>,
+  TError,
+  { id: number; data: BodyType<WebsiteConfigInput> },
+  TContext
+> => {
+  return useMutation(getUpdateWebsiteConfigMutationOptions(options));
+};
+
+/**
+ * @summary HTTP health check for the configured site URL
+ */
+export const getGetWebsiteHealthUrl = (id: number) => {
+  return `/api/agents/${id}/website/health`;
+};
+
+export const getWebsiteHealth = async (
+  id: number,
+  options?: RequestInit,
+): Promise<WebsiteHealth> => {
+  return customFetch<WebsiteHealth>(getGetWebsiteHealthUrl(id), {
+    ...options,
+    method: "GET",
+  });
+};
+
+export const getGetWebsiteHealthQueryKey = (id: number) => {
+  return [`/api/agents/${id}/website/health`] as const;
+};
+
+export const getGetWebsiteHealthQueryOptions = <
+  TData = Awaited<ReturnType<typeof getWebsiteHealth>>,
+  TError = ErrorType<unknown>,
+>(
+  id: number,
+  options?: {
+    query?: UseQueryOptions<
+      Awaited<ReturnType<typeof getWebsiteHealth>>,
+      TError,
+      TData
+    >;
+    request?: SecondParameter<typeof customFetch>;
+  },
+) => {
+  const { query: queryOptions, request: requestOptions } = options ?? {};
+
+  const queryKey = queryOptions?.queryKey ?? getGetWebsiteHealthQueryKey(id);
+
+  const queryFn: QueryFunction<
+    Awaited<ReturnType<typeof getWebsiteHealth>>
+  > = ({ signal }) => getWebsiteHealth(id, { signal, ...requestOptions });
+
+  return {
+    queryKey,
+    queryFn,
+    enabled: !!id,
+    ...queryOptions,
+  } as UseQueryOptions<
+    Awaited<ReturnType<typeof getWebsiteHealth>>,
+    TError,
+    TData
+  > & { queryKey: QueryKey };
+};
+
+export type GetWebsiteHealthQueryResult = NonNullable<
+  Awaited<ReturnType<typeof getWebsiteHealth>>
+>;
+export type GetWebsiteHealthQueryError = ErrorType<unknown>;
+
+/**
+ * @summary HTTP health check for the configured site URL
+ */
+
+export function useGetWebsiteHealth<
+  TData = Awaited<ReturnType<typeof getWebsiteHealth>>,
+  TError = ErrorType<unknown>,
+>(
+  id: number,
+  options?: {
+    query?: UseQueryOptions<
+      Awaited<ReturnType<typeof getWebsiteHealth>>,
+      TError,
+      TData
+    >;
+    request?: SecondParameter<typeof customFetch>;
+  },
+): UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+  const queryOptions = getGetWebsiteHealthQueryOptions(id, options);
+
+  const query = useQuery(queryOptions) as UseQueryResult<TData, TError> & {
+    queryKey: QueryKey;
+  };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
+
+/**
+ * @summary Git branch and last commit info for the site directory
+ */
+export const getGetWebsiteGitInfoUrl = (id: number) => {
+  return `/api/agents/${id}/website/git`;
+};
+
+export const getWebsiteGitInfo = async (
+  id: number,
+  options?: RequestInit,
+): Promise<WebsiteGitInfo> => {
+  return customFetch<WebsiteGitInfo>(getGetWebsiteGitInfoUrl(id), {
+    ...options,
+    method: "GET",
+  });
+};
+
+export const getGetWebsiteGitInfoQueryKey = (id: number) => {
+  return [`/api/agents/${id}/website/git`] as const;
+};
+
+export const getGetWebsiteGitInfoQueryOptions = <
+  TData = Awaited<ReturnType<typeof getWebsiteGitInfo>>,
+  TError = ErrorType<unknown>,
+>(
+  id: number,
+  options?: {
+    query?: UseQueryOptions<
+      Awaited<ReturnType<typeof getWebsiteGitInfo>>,
+      TError,
+      TData
+    >;
+    request?: SecondParameter<typeof customFetch>;
+  },
+) => {
+  const { query: queryOptions, request: requestOptions } = options ?? {};
+
+  const queryKey = queryOptions?.queryKey ?? getGetWebsiteGitInfoQueryKey(id);
+
+  const queryFn: QueryFunction<
+    Awaited<ReturnType<typeof getWebsiteGitInfo>>
+  > = ({ signal }) => getWebsiteGitInfo(id, { signal, ...requestOptions });
+
+  return {
+    queryKey,
+    queryFn,
+    enabled: !!id,
+    ...queryOptions,
+  } as UseQueryOptions<
+    Awaited<ReturnType<typeof getWebsiteGitInfo>>,
+    TError,
+    TData
+  > & { queryKey: QueryKey };
+};
+
+export type GetWebsiteGitInfoQueryResult = NonNullable<
+  Awaited<ReturnType<typeof getWebsiteGitInfo>>
+>;
+export type GetWebsiteGitInfoQueryError = ErrorType<unknown>;
+
+/**
+ * @summary Git branch and last commit info for the site directory
+ */
+
+export function useGetWebsiteGitInfo<
+  TData = Awaited<ReturnType<typeof getWebsiteGitInfo>>,
+  TError = ErrorType<unknown>,
+>(
+  id: number,
+  options?: {
+    query?: UseQueryOptions<
+      Awaited<ReturnType<typeof getWebsiteGitInfo>>,
+      TError,
+      TData
+    >;
+    request?: SecondParameter<typeof customFetch>;
+  },
+): UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+  const queryOptions = getGetWebsiteGitInfoQueryOptions(id, options);
+
+  const query = useQuery(queryOptions) as UseQueryResult<TData, TError> & {
+    queryKey: QueryKey;
+  };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
+
+/**
+ * @summary List files in the website directory (SFTP)
+ */
+export const getListWebsiteFilesUrl = (
+  id: number,
+  params?: ListWebsiteFilesParams,
+) => {
+  const normalizedParams = new URLSearchParams();
+
+  Object.entries(params || {}).forEach(([key, value]) => {
+    if (value !== undefined) {
+      normalizedParams.append(key, value === null ? "null" : value.toString());
+    }
+  });
+
+  const stringifiedParams = normalizedParams.toString();
+
+  return stringifiedParams.length > 0
+    ? `/api/agents/${id}/website/files?${stringifiedParams}`
+    : `/api/agents/${id}/website/files`;
+};
+
+export const listWebsiteFiles = async (
+  id: number,
+  params?: ListWebsiteFilesParams,
+  options?: RequestInit,
+): Promise<WebsiteFile[]> => {
+  return customFetch<WebsiteFile[]>(getListWebsiteFilesUrl(id, params), {
+    ...options,
+    method: "GET",
+  });
+};
+
+export const getListWebsiteFilesQueryKey = (
+  id: number,
+  params?: ListWebsiteFilesParams,
+) => {
+  return [
+    `/api/agents/${id}/website/files`,
+    ...(params ? [params] : []),
+  ] as const;
+};
+
+export const getListWebsiteFilesQueryOptions = <
+  TData = Awaited<ReturnType<typeof listWebsiteFiles>>,
+  TError = ErrorType<unknown>,
+>(
+  id: number,
+  params?: ListWebsiteFilesParams,
+  options?: {
+    query?: UseQueryOptions<
+      Awaited<ReturnType<typeof listWebsiteFiles>>,
+      TError,
+      TData
+    >;
+    request?: SecondParameter<typeof customFetch>;
+  },
+) => {
+  const { query: queryOptions, request: requestOptions } = options ?? {};
+
+  const queryKey =
+    queryOptions?.queryKey ?? getListWebsiteFilesQueryKey(id, params);
+
+  const queryFn: QueryFunction<
+    Awaited<ReturnType<typeof listWebsiteFiles>>
+  > = ({ signal }) =>
+    listWebsiteFiles(id, params, { signal, ...requestOptions });
+
+  return {
+    queryKey,
+    queryFn,
+    enabled: !!id,
+    ...queryOptions,
+  } as UseQueryOptions<
+    Awaited<ReturnType<typeof listWebsiteFiles>>,
+    TError,
+    TData
+  > & { queryKey: QueryKey };
+};
+
+export type ListWebsiteFilesQueryResult = NonNullable<
+  Awaited<ReturnType<typeof listWebsiteFiles>>
+>;
+export type ListWebsiteFilesQueryError = ErrorType<unknown>;
+
+/**
+ * @summary List files in the website directory (SFTP)
+ */
+
+export function useListWebsiteFiles<
+  TData = Awaited<ReturnType<typeof listWebsiteFiles>>,
+  TError = ErrorType<unknown>,
+>(
+  id: number,
+  params?: ListWebsiteFilesParams,
+  options?: {
+    query?: UseQueryOptions<
+      Awaited<ReturnType<typeof listWebsiteFiles>>,
+      TError,
+      TData
+    >;
+    request?: SecondParameter<typeof customFetch>;
+  },
+): UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+  const queryOptions = getListWebsiteFilesQueryOptions(id, params, options);
+
+  const query = useQuery(queryOptions) as UseQueryResult<TData, TError> & {
+    queryKey: QueryKey;
+  };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
+
+/**
+ * @summary Read a file from the website directory via SFTP
+ */
+export const getGetWebsiteFileContentUrl = (
+  id: number,
+  params: GetWebsiteFileContentParams,
+) => {
+  const normalizedParams = new URLSearchParams();
+
+  Object.entries(params || {}).forEach(([key, value]) => {
+    if (value !== undefined) {
+      normalizedParams.append(key, value === null ? "null" : value.toString());
+    }
+  });
+
+  const stringifiedParams = normalizedParams.toString();
+
+  return stringifiedParams.length > 0
+    ? `/api/agents/${id}/website/files/content?${stringifiedParams}`
+    : `/api/agents/${id}/website/files/content`;
+};
+
+export const getWebsiteFileContent = async (
+  id: number,
+  params: GetWebsiteFileContentParams,
+  options?: RequestInit,
+): Promise<WebsiteFileContent> => {
+  return customFetch<WebsiteFileContent>(
+    getGetWebsiteFileContentUrl(id, params),
+    {
+      ...options,
+      method: "GET",
+    },
+  );
+};
+
+export const getGetWebsiteFileContentQueryKey = (
+  id: number,
+  params?: GetWebsiteFileContentParams,
+) => {
+  return [
+    `/api/agents/${id}/website/files/content`,
+    ...(params ? [params] : []),
+  ] as const;
+};
+
+export const getGetWebsiteFileContentQueryOptions = <
+  TData = Awaited<ReturnType<typeof getWebsiteFileContent>>,
+  TError = ErrorType<unknown>,
+>(
+  id: number,
+  params: GetWebsiteFileContentParams,
+  options?: {
+    query?: UseQueryOptions<
+      Awaited<ReturnType<typeof getWebsiteFileContent>>,
+      TError,
+      TData
+    >;
+    request?: SecondParameter<typeof customFetch>;
+  },
+) => {
+  const { query: queryOptions, request: requestOptions } = options ?? {};
+
+  const queryKey =
+    queryOptions?.queryKey ?? getGetWebsiteFileContentQueryKey(id, params);
+
+  const queryFn: QueryFunction<
+    Awaited<ReturnType<typeof getWebsiteFileContent>>
+  > = ({ signal }) =>
+    getWebsiteFileContent(id, params, { signal, ...requestOptions });
+
+  return {
+    queryKey,
+    queryFn,
+    enabled: !!id,
+    ...queryOptions,
+  } as UseQueryOptions<
+    Awaited<ReturnType<typeof getWebsiteFileContent>>,
+    TError,
+    TData
+  > & { queryKey: QueryKey };
+};
+
+export type GetWebsiteFileContentQueryResult = NonNullable<
+  Awaited<ReturnType<typeof getWebsiteFileContent>>
+>;
+export type GetWebsiteFileContentQueryError = ErrorType<unknown>;
+
+/**
+ * @summary Read a file from the website directory via SFTP
+ */
+
+export function useGetWebsiteFileContent<
+  TData = Awaited<ReturnType<typeof getWebsiteFileContent>>,
+  TError = ErrorType<unknown>,
+>(
+  id: number,
+  params: GetWebsiteFileContentParams,
+  options?: {
+    query?: UseQueryOptions<
+      Awaited<ReturnType<typeof getWebsiteFileContent>>,
+      TError,
+      TData
+    >;
+    request?: SecondParameter<typeof customFetch>;
+  },
+): UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+  const queryOptions = getGetWebsiteFileContentQueryOptions(
+    id,
+    params,
+    options,
+  );
+
+  const query = useQuery(queryOptions) as UseQueryResult<TData, TError> & {
+    queryKey: QueryKey;
+  };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
+
+/**
+ * @summary Write a file to the website directory via SFTP
+ */
+export const getUpdateWebsiteFileContentUrl = (id: number) => {
+  return `/api/agents/${id}/website/files/content`;
+};
+
+export const updateWebsiteFileContent = async (
+  id: number,
+  websiteFileContent: WebsiteFileContent,
+  options?: RequestInit,
+): Promise<WebsiteFileDiff> => {
+  return customFetch<WebsiteFileDiff>(getUpdateWebsiteFileContentUrl(id), {
+    ...options,
+    method: "PUT",
+    headers: { "Content-Type": "application/json", ...options?.headers },
+    body: JSON.stringify(websiteFileContent),
+  });
+};
+
+export const getUpdateWebsiteFileContentMutationOptions = <
+  TError = ErrorType<unknown>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof updateWebsiteFileContent>>,
+    TError,
+    { id: number; data: BodyType<WebsiteFileContent> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof updateWebsiteFileContent>>,
+  TError,
+  { id: number; data: BodyType<WebsiteFileContent> },
+  TContext
+> => {
+  const mutationKey = ["updateWebsiteFileContent"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof updateWebsiteFileContent>>,
+    { id: number; data: BodyType<WebsiteFileContent> }
+  > = (props) => {
+    const { id, data } = props ?? {};
+
+    return updateWebsiteFileContent(id, data, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type UpdateWebsiteFileContentMutationResult = NonNullable<
+  Awaited<ReturnType<typeof updateWebsiteFileContent>>
+>;
+export type UpdateWebsiteFileContentMutationBody = BodyType<WebsiteFileContent>;
+export type UpdateWebsiteFileContentMutationError = ErrorType<unknown>;
+
+/**
+ * @summary Write a file to the website directory via SFTP
+ */
+export const useUpdateWebsiteFileContent = <
+  TError = ErrorType<unknown>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof updateWebsiteFileContent>>,
+    TError,
+    { id: number; data: BodyType<WebsiteFileContent> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof updateWebsiteFileContent>>,
+  TError,
+  { id: number; data: BodyType<WebsiteFileContent> },
+  TContext
+> => {
+  return useMutation(getUpdateWebsiteFileContentMutationOptions(options));
+};
+
+/**
+ * @summary Run the build command on the VPS (SSE streaming)
+ */
+export const getBuildWebsiteUrl = (id: number) => {
+  return `/api/agents/${id}/website/build`;
+};
+
+export const buildWebsite = async (
+  id: number,
+  options?: RequestInit,
+): Promise<string> => {
+  return customFetch<string>(getBuildWebsiteUrl(id), {
+    ...options,
+    method: "POST",
+  });
+};
+
+export const getBuildWebsiteMutationOptions = <
+  TError = ErrorType<unknown>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof buildWebsite>>,
+    TError,
+    { id: number },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof buildWebsite>>,
+  TError,
+  { id: number },
+  TContext
+> => {
+  const mutationKey = ["buildWebsite"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof buildWebsite>>,
+    { id: number }
+  > = (props) => {
+    const { id } = props ?? {};
+
+    return buildWebsite(id, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type BuildWebsiteMutationResult = NonNullable<
+  Awaited<ReturnType<typeof buildWebsite>>
+>;
+
+export type BuildWebsiteMutationError = ErrorType<unknown>;
+
+/**
+ * @summary Run the build command on the VPS (SSE streaming)
+ */
+export const useBuildWebsite = <
+  TError = ErrorType<unknown>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof buildWebsite>>,
+    TError,
+    { id: number },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof buildWebsite>>,
+  TError,
+  { id: number },
+  TContext
+> => {
+  return useMutation(getBuildWebsiteMutationOptions(options));
+};
+
+/**
+ * @summary Full deploy pipeline — git pull, build, deploy, health check (SSE streaming)
+ */
+export const getDeployWebsiteUrl = (id: number) => {
+  return `/api/agents/${id}/website/deploy`;
+};
+
+export const deployWebsite = async (
+  id: number,
+  options?: RequestInit,
+): Promise<string> => {
+  return customFetch<string>(getDeployWebsiteUrl(id), {
+    ...options,
+    method: "POST",
+  });
+};
+
+export const getDeployWebsiteMutationOptions = <
+  TError = ErrorType<unknown>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof deployWebsite>>,
+    TError,
+    { id: number },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof deployWebsite>>,
+  TError,
+  { id: number },
+  TContext
+> => {
+  const mutationKey = ["deployWebsite"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof deployWebsite>>,
+    { id: number }
+  > = (props) => {
+    const { id } = props ?? {};
+
+    return deployWebsite(id, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type DeployWebsiteMutationResult = NonNullable<
+  Awaited<ReturnType<typeof deployWebsite>>
+>;
+
+export type DeployWebsiteMutationError = ErrorType<unknown>;
+
+/**
+ * @summary Full deploy pipeline — git pull, build, deploy, health check (SSE streaming)
+ */
+export const useDeployWebsite = <
+  TError = ErrorType<unknown>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof deployWebsite>>,
+    TError,
+    { id: number },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof deployWebsite>>,
+  TError,
+  { id: number },
+  TContext
+> => {
+  return useMutation(getDeployWebsiteMutationOptions(options));
 };

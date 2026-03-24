@@ -24,6 +24,8 @@ tags:
     description: Global settings
   - name: openai
     description: OpenAI AI chat, image, and audio operations
+  - name: website
+    description: Per-agent website management
 
 paths:
   /healthz:
@@ -770,6 +772,200 @@ paths:
               schema:
                 $ref: "#/components/schemas/GenerateOpenaiImageResponse"
 
+  # ── Website Management ──────────────────────────────────────────────────────
+  /agents/{id}/website:
+    get:
+      operationId: getWebsiteConfig
+      tags: [website]
+      summary: Get website config for an agent
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: Website config (null if not set)
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/WebsiteConfig"
+        "404":
+          description: Not found
+    put:
+      operationId: updateWebsiteConfig
+      tags: [website]
+      summary: Create or update website config for an agent
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/WebsiteConfigInput"
+      responses:
+        "200":
+          description: Updated config
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/WebsiteConfig"
+
+  /agents/{id}/website/health:
+    get:
+      operationId: getWebsiteHealth
+      tags: [website]
+      summary: HTTP health check for the configured site URL
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: Health result
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/WebsiteHealth"
+
+  /agents/{id}/website/git:
+    get:
+      operationId: getWebsiteGitInfo
+      tags: [website]
+      summary: Git branch and last commit info for the site directory
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: Git info
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/WebsiteGitInfo"
+
+  /agents/{id}/website/files:
+    get:
+      operationId: listWebsiteFiles
+      tags: [website]
+      summary: List files in the website directory (SFTP)
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+        - name: path
+          in: query
+          schema:
+            type: string
+          description: Subdirectory path (must be within vpsDirectory)
+      responses:
+        "200":
+          description: Directory listing
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/WebsiteFile"
+
+  /agents/{id}/website/files/content:
+    get:
+      operationId: getWebsiteFileContent
+      tags: [website]
+      summary: Read a file from the website directory via SFTP
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+        - name: path
+          in: query
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: File content
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/WebsiteFileContent"
+    put:
+      operationId: updateWebsiteFileContent
+      tags: [website]
+      summary: Write a file to the website directory via SFTP
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/WebsiteFileContent"
+      responses:
+        "200":
+          description: Write confirmation with diff
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/WebsiteFileDiff"
+
+  /agents/{id}/website/build:
+    post:
+      operationId: buildWebsite
+      tags: [website]
+      summary: Run the build command on the VPS (SSE streaming)
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: SSE stream of build log lines
+          content:
+            text/event-stream:
+              schema:
+                type: string
+
+  /agents/{id}/website/deploy:
+    post:
+      operationId: deployWebsite
+      tags: [website]
+      summary: Full deploy pipeline — git pull, build, deploy, health check (SSE streaming)
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: SSE stream of deploy log lines
+          content:
+            text/event-stream:
+              schema:
+                type: string
+
 components:
   schemas:
     HealthStatus:
@@ -1382,3 +1578,137 @@ components:
           type: string
       required:
         - error
+
+    # ── Website ──────────────────────────────────────────────────────────────────
+    WebsiteConfig:
+      type: object
+      properties:
+        id:
+          type: integer
+        agentId:
+          type: integer
+        type:
+          type: string
+          enum: [vps-path, git]
+        repoUrl:
+          type: string
+          nullable: true
+        branch:
+          type: string
+        vpsDirectory:
+          type: string
+          nullable: true
+        siteUrl:
+          type: string
+          nullable: true
+        buildCommand:
+          type: string
+          nullable: true
+        deployCommand:
+          type: string
+          nullable: true
+        updatedAt:
+          type: string
+          format: date-time
+      required:
+        - id
+        - agentId
+        - type
+        - branch
+
+    WebsiteConfigInput:
+      type: object
+      properties:
+        type:
+          type: string
+          enum: [vps-path, git]
+        repoUrl:
+          type: string
+        branch:
+          type: string
+        vpsDirectory:
+          type: string
+        siteUrl:
+          type: string
+        buildCommand:
+          type: string
+        deployCommand:
+          type: string
+
+    WebsiteHealth:
+      type: object
+      properties:
+        ok:
+          type: boolean
+        status:
+          type: integer
+          nullable: true
+        latencyMs:
+          type: integer
+          nullable: true
+        error:
+          type: string
+          nullable: true
+      required:
+        - ok
+
+    WebsiteGitInfo:
+      type: object
+      properties:
+        branch:
+          type: string
+        lastCommit:
+          type: string
+        uncommittedFiles:
+          type: array
+          items:
+            type: string
+      required:
+        - branch
+        - lastCommit
+        - uncommittedFiles
+
+    WebsiteFile:
+      type: object
+      properties:
+        name:
+          type: string
+        path:
+          type: string
+        type:
+          type: string
+          enum: [file, directory]
+        size:
+          type: integer
+      required:
+        - name
+        - path
+        - type
+
+    WebsiteFileContent:
+      type: object
+      properties:
+        path:
+          type: string
+        content:
+          type: string
+      required:
+        - path
+        - content
+
+    WebsiteFileDiff:
+      type: object
+      properties:
+        path:
+          type: string
+        before:
+          type: string
+        after:
+          type: string
+        changed:
+          type: boolean
+      required:
+        - path
+        - before
+        - after
+        - changed

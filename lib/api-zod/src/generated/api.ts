@@ -578,3 +578,151 @@ export const GenerateOpenaiImageBody = zod.object({
 export const GenerateOpenaiImageResponse = zod.object({
   b64_json: zod.string(),
 });
+
+/**
+ * @summary Get website config for an agent
+ */
+export const GetWebsiteConfigParams = zod.object({
+  id: zod.coerce.number(),
+});
+
+export const GetWebsiteConfigResponse = zod.object({
+  id: zod.number(),
+  agentId: zod.number(),
+  type: zod.enum(["vps-path", "git"]),
+  repoUrl: zod.string().nullish(),
+  branch: zod.string(),
+  vpsDirectory: zod.string().nullish(),
+  siteUrl: zod.string().nullish(),
+  buildCommand: zod.string().nullish(),
+  deployCommand: zod.string().nullish(),
+  updatedAt: zod.date().optional(),
+});
+
+/**
+ * @summary Create or update website config for an agent
+ */
+export const UpdateWebsiteConfigParams = zod.object({
+  id: zod.coerce.number(),
+});
+
+export const UpdateWebsiteConfigBody = zod.object({
+  type: zod.enum(["vps-path", "git"]).optional(),
+  repoUrl: zod.string().optional(),
+  branch: zod.string().optional(),
+  vpsDirectory: zod.string().optional(),
+  siteUrl: zod.string().optional(),
+  buildCommand: zod.string().optional(),
+  deployCommand: zod.string().optional(),
+});
+
+export const UpdateWebsiteConfigResponse = zod.object({
+  id: zod.number(),
+  agentId: zod.number(),
+  type: zod.enum(["vps-path", "git"]),
+  repoUrl: zod.string().nullish(),
+  branch: zod.string(),
+  vpsDirectory: zod.string().nullish(),
+  siteUrl: zod.string().nullish(),
+  buildCommand: zod.string().nullish(),
+  deployCommand: zod.string().nullish(),
+  updatedAt: zod.date().optional(),
+});
+
+/**
+ * @summary HTTP health check for the configured site URL
+ */
+export const GetWebsiteHealthParams = zod.object({
+  id: zod.coerce.number(),
+});
+
+export const GetWebsiteHealthResponse = zod.object({
+  ok: zod.boolean(),
+  status: zod.number().nullish(),
+  latencyMs: zod.number().nullish(),
+  error: zod.string().nullish(),
+});
+
+/**
+ * @summary Git branch and last commit info for the site directory
+ */
+export const GetWebsiteGitInfoParams = zod.object({
+  id: zod.coerce.number(),
+});
+
+export const GetWebsiteGitInfoResponse = zod.object({
+  branch: zod.string(),
+  lastCommit: zod.string(),
+  uncommittedFiles: zod.array(zod.string()),
+});
+
+/**
+ * @summary List files in the website directory (SFTP)
+ */
+export const ListWebsiteFilesParams = zod.object({
+  id: zod.coerce.number(),
+});
+
+export const ListWebsiteFilesQueryParams = zod.object({
+  path: zod.coerce
+    .string()
+    .optional()
+    .describe("Subdirectory path (must be within vpsDirectory)"),
+});
+
+export const ListWebsiteFilesResponseItem = zod.object({
+  name: zod.string(),
+  path: zod.string(),
+  type: zod.enum(["file", "directory"]),
+  size: zod.number().optional(),
+});
+export const ListWebsiteFilesResponse = zod.array(ListWebsiteFilesResponseItem);
+
+/**
+ * @summary Read a file from the website directory via SFTP
+ */
+export const GetWebsiteFileContentParams = zod.object({
+  id: zod.coerce.number(),
+});
+
+export const GetWebsiteFileContentQueryParams = zod.object({
+  path: zod.coerce.string(),
+});
+
+export const GetWebsiteFileContentResponse = zod.object({
+  path: zod.string(),
+  content: zod.string(),
+});
+
+/**
+ * @summary Write a file to the website directory via SFTP
+ */
+export const UpdateWebsiteFileContentParams = zod.object({
+  id: zod.coerce.number(),
+});
+
+export const UpdateWebsiteFileContentBody = zod.object({
+  path: zod.string(),
+  content: zod.string(),
+});
+
+export const UpdateWebsiteFileContentResponse = zod.object({
+  path: zod.string(),
+  before: zod.string(),
+  after: zod.string(),
+  changed: zod.boolean(),
+});
+
+/**
+ * @summary Run the build command on the VPS (SSE streaming)
+ */
+export const BuildWebsiteParams = zod.object({
+  id: zod.coerce.number(),
+});
+
+/**
+ * @summary Full deploy pipeline — git pull, build, deploy, health check (SSE streaming)
+ */
+export const DeployWebsiteParams = zod.object({
+  id: zod.coerce.number(),
+});
