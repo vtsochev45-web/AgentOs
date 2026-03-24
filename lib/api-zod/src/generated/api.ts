@@ -474,6 +474,8 @@ export const GetSettingsResponse = zod.object({
  */
 export const SaveSettingsBody = zod.object({
   aiModel: zod.string().optional(),
+  openaiApiKey: zod.string().nullish(),
+  anthropicApiKey: zod.string().nullish(),
   smtpHost: zod.string().nullish(),
   smtpPort: zod.number().nullish(),
   smtpUser: zod.string().nullish(),
@@ -481,6 +483,8 @@ export const SaveSettingsBody = zod.object({
   webhookUrl: zod.string().nullish(),
   searchProvider: zod.enum(["duckduckgo", "brave"]).optional(),
   braveApiKey: zod.string().nullish(),
+  openclawInstanceUrl: zod.string().nullish(),
+  openclawApiKey: zod.string().nullish(),
 });
 
 export const SaveSettingsResponse = zod.object({

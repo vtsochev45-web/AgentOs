@@ -280,6 +280,8 @@ export const SaveSettingsBodySearchProvider = {
 
 export interface SaveSettingsBody {
   aiModel?: string;
+  openaiApiKey?: string | null;
+  anthropicApiKey?: string | null;
   smtpHost?: string | null;
   smtpPort?: number | null;
   smtpUser?: string | null;
@@ -287,6 +289,8 @@ export interface SaveSettingsBody {
   webhookUrl?: string | null;
   searchProvider?: SaveSettingsBodySearchProvider;
   braveApiKey?: string | null;
+  openclawInstanceUrl?: string | null;
+  openclawApiKey?: string | null;
 }
 
 export interface OpenaiConversation {

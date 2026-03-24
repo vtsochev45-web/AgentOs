@@ -726,11 +726,14 @@ function ConnectionCard({
   detail: string;
 }) {
   const Icon = card.icon;
+  const effectiveStatus: ConnStatus = status === "idle" && !card.configured ? "error" : status;
+  const effectiveDetail = status === "idle" && !card.configured ? "Not configured" : detail;
+
   return (
     <div className={`${sectionCls} flex flex-col`}>
       <div className="p-4 flex items-start gap-3">
-        <div className={`w-9 h-9 rounded-xl flex items-center justify-center flex-shrink-0`} style={{ background: "rgba(255,255,255,0.05)" }}>
-          <Icon className={`w-4 h-4`} style={{ color: card.iconColor }} />
+        <div className="w-9 h-9 rounded-xl flex items-center justify-center flex-shrink-0" style={{ background: "rgba(255,255,255,0.05)" }}>
+          <Icon className="w-4 h-4" style={{ color: card.iconColor }} />
         </div>
         <div className="flex-1 min-w-0">
           <div className="flex items-center gap-2 flex-wrap">
@@ -738,7 +741,7 @@ function ConnectionCard({
             {card.configured ? (
               <span className="text-[10px] font-mono text-green-400 bg-green-400/10 px-1.5 py-0.5 rounded-full border border-green-400/20">SET</span>
             ) : (
-              <span className="text-[10px] font-mono text-white/30 bg-white/5 px-1.5 py-0.5 rounded-full border border-white/10">NOT SET</span>
+              <span className="text-[10px] font-mono text-red-400/70 bg-red-400/10 px-1.5 py-0.5 rounded-full border border-red-400/20">NOT SET</span>
             )}
           </div>
           <p className="text-xs text-muted-foreground mt-0.5 truncate">{card.description}</p>
@@ -753,14 +756,14 @@ function ConnectionCard({
           {status === "loading" ? <Loader2 className="w-3 h-3 animate-spin" /> : <Zap className="w-3 h-3" />}
           Test
         </button>
-        {status === "ok" && (
+        {effectiveStatus === "ok" && (
           <span className="inline-flex items-center gap-1.5 text-xs text-green-400 font-medium">
-            <CheckCircle2 className="w-3.5 h-3.5" /> {detail || "OK"}
+            <CheckCircle2 className="w-3.5 h-3.5" /> {effectiveDetail || "OK"}
           </span>
         )}
-        {status === "error" && (
+        {effectiveStatus === "error" && (
           <span className="inline-flex items-center gap-1.5 text-xs text-red-400 font-medium truncate">
-            <XCircle className="w-3.5 h-3.5 flex-shrink-0" /> {detail || "Failed"}
+            <XCircle className="w-3.5 h-3.5 flex-shrink-0" /> {effectiveDetail || "Failed"}
           </span>
         )}
       </div>

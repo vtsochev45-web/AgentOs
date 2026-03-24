@@ -1469,6 +1469,12 @@ components:
       properties:
         aiModel:
           type: string
+        openaiApiKey:
+          type: string
+          nullable: true
+        anthropicApiKey:
+          type: string
+          nullable: true
         smtpHost:
           type: string
           nullable: true
@@ -1488,6 +1494,12 @@ components:
           type: string
           enum: [duckduckgo, brave]
         braveApiKey:
+          type: string
+          nullable: true
+        openclawInstanceUrl:
+          type: string
+          nullable: true
+        openclawApiKey:
           type: string
           nullable: true
 
