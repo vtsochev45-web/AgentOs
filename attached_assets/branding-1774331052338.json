@@ -1,0 +1,158 @@
+{
+  "colorScheme": "dark",
+  "fonts": [
+    {
+      "family": "Satoshi",
+      "role": "body"
+    },
+    {
+      "family": "SF Mono",
+      "role": "monospace"
+    },
+    {
+      "family": "Fira Code",
+      "role": "monospace"
+    },
+    {
+      "family": "JetBrains Mono",
+      "role": "monospace"
+    },
+    {
+      "family": "Clash Display",
+      "role": "heading"
+    }
+  ],
+  "colors": {
+    "primary": "#090E18",
+    "accent": "#F0F4FF",
+    "background": "#050810",
+    "textPrimary": "#F0F4FF",
+    "link": "#F0F4FF"
+  },
+  "typography": {
+    "fontFamilies": {
+      "primary": "Satoshi",
+      "heading": "Clash Display"
+    },
+    "fontStacks": {
+      "heading": [
+        "Clash Display",
+        "system-ui",
+        "sans-serif"
+      ],
+      "body": [
+        "Satoshi",
+        "system-ui",
+        "sans-serif"
+      ],
+      "paragraph": [
+        "Clash Display",
+        "system-ui",
+        "sans-serif"
+      ]
+    },
+    "fontSizes": {
+      "h1": "72px",
+      "h2": "22.4px",
+      "body": "17.6px"
+    }
+  },
+  "spacing": {
+    "baseUnit": 4,
+    "borderRadius": "12px"
+  },
+  "components": {
+    "input": {
+      "background": "#090E18",
+      "textColor": "#F0F4FF",
+      "borderColor": "#191D28",
+      "borderRadius": "12px",
+      "borderRadiusCorners": {
+        "topLeft": "12px",
+        "topRight": "12px",
+        "bottomRight": "12px",
+        "bottomLeft": "12px"
+      },
+      "shadow": "none"
+    },
+    "buttonPrimary": {
+      "background": "#050810",
+      "textColor": "#FFFFFF",
+      "borderRadius": "12px",
+      "borderRadiusCorners": {
+        "topLeft": "12px",
+        "topRight": "12px",
+        "bottomRight": "12px",
+        "bottomLeft": "12px"
+      },
+      "shadow": "rgba(255, 77, 77, 0.25) 0px 4px 20px 0px"
+    },
+    "buttonSecondary": {
+      "background": "#090E18",
+      "textColor": "#F0F4FF",
+      "borderColor": "#191D28",
+      "borderRadius": "12px",
+      "borderRadiusCorners": {
+        "topLeft": "12px",
+        "topRight": "12px",
+        "bottomRight": "12px",
+        "bottomLeft": "12px"
+      },
+      "shadow": "none"
+    }
+  },
+  "images": {
+    "logo": "File saved at: attached_assets/logo.svg",
+    "favicon": "File saved at: attached_assets/favicon.svg",
+    "ogImage": "File saved at: attached_assets/ogImage.png"
+  },
+  "__llm_logo_reasoning": {
+    "selectedIndex": 0,
+    "reasoning": "Selected #0 because it is visible, located in the header, and matches the brand inferred from the page title and URL.",
+    "confidence": 0.9,
+    "source": "llm"
+  },
+  "__llm_button_reasoning": {
+    "primary": {
+      "index": 0,
+      "text": "Subscribe",
+      "reasoning": "Button #7 with text 'Subscribe' is likely the primary CTA due to its distinct text and unique background color (#050810), setting it apart from the testimonial buttons."
+    },
+    "secondary": {
+      "index": 28,
+      "text": "\"The future of how AI personal assistants look like is @openclaw. Has already help me submit health ",
+      "reasoning": "Button #0 is selected as secondary due to its testimonial nature and different color group (#090E18) from the primary button."
+    },
+    "confidence": 0.9
+  },
+  "personality": {
+    "tone": "modern",
+    "energy": "medium",
+    "targetAudience": "tech-savvy individuals"
+  },
+  "designSystem": {
+    "framework": "custom",
+    "componentLibrary": ""
+  },
+  "confidence": {
+    "buttons": 0.9,
+    "colors": 0.9,
+    "overall": 0.9
+  },
+  "__llm_metadata": {
+    "logoSelection": {
+      "llmCalled": true,
+      "llmSucceeded": true,
+      "finalSource": "llm",
+      "rawLogoSelection": {
+        "selectedLogoIndex": 0,
+        "selectedLogoReasoning": "Selected #0 because it is visible, located in the header, and matches the brand inferred from the page title and URL.",
+        "confidence": 0.9
+      }
+    },
+    "buttonClassification": {
+      "llmCalled": true,
+      "llmSucceeded": true
+    }
+  }
+}
