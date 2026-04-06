@@ -1,11 +1,11 @@
 import { useState, useEffect, useCallback } from "react";
-import { useListAgents, useCreateAgent } from "@workspace/api-client-react";
+import { useListAgents, useCreateAgent, useUpdateAgent } from "@workspace/api-client-react";
 import { Link } from "wouter";
 import { useForm } from "react-hook-form";
 import { z } from "zod";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { AgentStatusBadge } from "@/components/ui/AgentStatusBadge";
-import { Bot, Plus, X, Search, Terminal, Code, MessageSquare, GitBranch, Webhook } from "lucide-react";
+import { Bot, Plus, X, Search, Terminal, Code, MessageSquare, GitBranch, Webhook, FileText, FolderOpen, PenTool, Globe, Rocket, HeartPulse, FileEdit, Settings, Workflow, Database } from "lucide-react";
 import { useQueryClient } from "@tanstack/react-query";
 import { getListAgentsQueryKey } from "@workspace/api-client-react";
 import { useSSEAgentStatus } from "@/hooks/use-sse";
@@ -20,10 +20,21 @@ const createSchema = z.object({
 const AVAILABLE_TOOLS = [
   { id: "web_search", label: "Web Search", icon: Search },
   { id: "vps_shell", label: "VPS Shell", icon: Terminal },
+  { id: "file_read", label: "File Read", icon: FileText },
+  { id: "file_write", label: "File Write", icon: PenTool },
+  { id: "file_list", label: "File List", icon: FolderOpen },
   { id: "code_exec", label: "Code Exec", icon: Code },
-  { id: "send_email", label: "Email/Messaging", icon: MessageSquare },
+  { id: "send_email", label: "Email", icon: MessageSquare },
   { id: "delegate_to_agent", label: "Delegate to Agent", icon: GitBranch },
-  { id: "send_webhook", label: "Send Webhook", icon: Webhook },
+  { id: "send_webhook", label: "Webhook", icon: Webhook },
+  { id: "website_read", label: "Website Read", icon: Globe },
+  { id: "website_write", label: "Website Write", icon: FileEdit },
+  { id: "website_build", label: "Website Build", icon: Code },
+  { id: "website_deploy", label: "Website Deploy", icon: Rocket },
+  { id: "website_health", label: "Website Health", icon: HeartPulse },
+  { id: "compose_pipeline", label: "Pipeline", icon: Workflow },
+  { id: "context_set", label: "Context Set", icon: Database },
+  { id: "context_get", label: "Context Get", icon: Database },
 ];
 
 export default function Agents() {
@@ -49,12 +60,25 @@ export default function Agents() {
     status: (statusOverrides[a.id] ?? a.status) as Agent["status"],
   }));
 
+  const [editAgent, setEditAgent] = useState<Agent | null>(null);
+  const [editTools, setEditTools] = useState<string[]>([]);
+  const [editPersona, setEditPersona] = useState("");
+
   const createMutation = useCreateAgent({
     mutation: {
       onSuccess: () => {
         queryClient.invalidateQueries({ queryKey: getListAgentsQueryKey() });
         setIsCreateOpen(false);
         form.reset();
+      }
+    }
+  });
+
+  const updateMutation = useUpdateAgent({
+    mutation: {
+      onSuccess: () => {
+        queryClient.invalidateQueries({ queryKey: getListAgentsQueryKey() });
+        setEditAgent(null);
       }
     }
   });
@@ -66,6 +90,23 @@ export default function Agents() {
 
   const onSubmit = (data: z.infer<typeof createSchema>) => {
     createMutation.mutate({ data });
+  };
+
+  const openEdit = (agent: Agent, e: React.MouseEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setEditAgent(agent);
+    setEditTools(agent.toolsEnabled ?? []);
+    setEditPersona(agent.persona);
+  };
+
+  const saveEdit = () => {
+    if (!editAgent) return;
+    updateMutation.mutate({ id: editAgent.id, data: { toolsEnabled: editTools, persona: editPersona } });
+  };
+
+  const toggleEditTool = (toolId: string) => {
+    setEditTools(prev => prev.includes(toolId) ? prev.filter(t => t !== toolId) : [...prev, toolId]);
   };
 
   return (
@@ -96,7 +137,12 @@ export default function Agents() {
             <Link key={agent.id} href={`/agents/${agent.id}`} className="glass-panel p-6 rounded-2xl hover:-translate-y-1 hover:shadow-2xl hover:shadow-primary/10 hover:border-primary/30 transition-all cursor-pointer group flex flex-col h-[220px]">
               <div className="flex justify-between items-start mb-3">
                 <h3 className="text-xl font-bold text-white group-hover:text-primary transition-colors truncate pr-2">{agent.name}</h3>
-                <AgentStatusBadge status={agent.status} />
+                <div className="flex items-center gap-2">
+                  <button onClick={(e) => openEdit(agent, e)} className="text-muted-foreground hover:text-white transition-colors p-1 rounded-lg hover:bg-white/10" title="Edit tools">
+                    <Settings className="w-4 h-4" />
+                  </button>
+                  <AgentStatusBadge status={agent.status} />
+                </div>
               </div>
               <p className="text-sm text-muted-foreground flex-1 overflow-hidden line-clamp-3 leading-relaxed">
                 {agent.persona}
@@ -110,6 +156,62 @@ export default function Agents() {
               </div>
             </Link>
           ))}
+        </div>
+      )}
+
+      {/* Edit Dialog Overlay */}
+      {editAgent && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm">
+          <div className="glass-panel w-full max-w-lg rounded-2xl overflow-hidden shadow-2xl animate-in fade-in zoom-in-95 duration-200 max-h-[90vh] flex flex-col">
+            <div className="flex justify-between items-center p-6 border-b border-white/10 bg-white/5">
+              <h2 className="text-xl font-bold text-white">Configure {editAgent.name}</h2>
+              <button onClick={() => setEditAgent(null)} className="text-muted-foreground hover:text-white transition-colors">
+                <X className="w-6 h-6" />
+              </button>
+            </div>
+            <div className="p-6 space-y-6 overflow-y-auto">
+              <div className="space-y-2">
+                <label className="text-sm font-medium text-white">Persona</label>
+                <textarea
+                  value={editPersona}
+                  onChange={(e) => setEditPersona(e.target.value)}
+                  rows={3}
+                  className="w-full bg-black/40 border border-white/10 rounded-xl px-4 py-3 text-white focus:outline-none focus:ring-2 focus:ring-primary focus:border-transparent transition-all resize-none text-sm"
+                />
+              </div>
+              <div className="space-y-3">
+                <label className="text-sm font-medium text-white">Authorized Tools</label>
+                <div className="grid grid-cols-2 gap-2">
+                  {AVAILABLE_TOOLS.map(tool => {
+                    const isSelected = editTools.includes(tool.id);
+                    const ToolIcon = tool.icon;
+                    return (
+                      <div
+                        key={tool.id}
+                        onClick={() => toggleEditTool(tool.id)}
+                        className={`flex items-center gap-2 p-2.5 rounded-xl border cursor-pointer transition-all ${isSelected ? 'bg-primary/20 border-primary text-white' : 'bg-black/20 border-white/10 text-muted-foreground hover:bg-white/5'}`}
+                      >
+                        <ToolIcon className={`w-4 h-4 flex-shrink-0 ${isSelected ? 'text-primary' : ''}`} />
+                        <span className="text-xs font-medium">{tool.label}</span>
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+              <div className="pt-4 flex justify-end gap-3">
+                <button type="button" onClick={() => setEditAgent(null)} className="px-5 py-2.5 rounded-xl font-medium text-muted-foreground hover:text-white transition-colors">
+                  Cancel
+                </button>
+                <button
+                  onClick={saveEdit}
+                  disabled={updateMutation.isPending}
+                  className="bg-primary hover:bg-primary/90 disabled:opacity-50 text-primary-foreground px-6 py-2.5 rounded-xl font-semibold shadow-lg shadow-primary/20 transition-all"
+                >
+                  {updateMutation.isPending ? 'Saving...' : 'Save'}
+                </button>
+              </div>
+            </div>
+          </div>
         </div>
       )}
 

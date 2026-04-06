@@ -17,7 +17,7 @@ router.get("/settings", requireApiKey, async (req, res): Promise<void> => {
   const [settings] = await db.select().from(appSettingsTable).limit(1);
   if (!settings) {
     res.json({
-      aiModel: "gpt-5.2",
+      aiModel: "google/gemini-2.5-flash",
       openaiApiKeyConfigured: false,
       anthropicApiKeyConfigured: false,
       smtpHost: null,

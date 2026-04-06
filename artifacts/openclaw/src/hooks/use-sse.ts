@@ -42,42 +42,58 @@ export function useSSEChat() {
         signal: abortControllerRef.current.signal,
       });
 
+      if (response.status === 409) {
+        setError("Agent is busy — please wait for the current task to finish");
+        return;
+      }
       if (!response.ok) throw new Error("Failed to start chat stream");
       if (!response.body) throw new Error("No response body");
+
+      // Abort stale reader on tab switch
+      const visHandler = () => {
+        if (document.visibilityState === "visible") {
+          abortControllerRef.current?.abort();
+        }
+      };
+      document.addEventListener("visibilitychange", visHandler);
 
       const reader = response.body.getReader();
       const decoder = new TextDecoder();
       let buffer = "";
 
-      while (true) {
-        const { done, value } = await reader.read();
-        if (done) break;
+      try {
+        while (true) {
+          const { done, value } = await reader.read();
+          if (done) break;
 
-        buffer += decoder.decode(value, { stream: true });
-        const lines = buffer.split("\n\n");
-        buffer = lines.pop() ?? "";
+          buffer += decoder.decode(value, { stream: true });
+          const lines = buffer.split("\n\n");
+          buffer = lines.pop() ?? "";
 
-        for (const line of lines) {
-          if (line.startsWith("data: ")) {
-            const dataStr = line.slice(6).trim();
-            if (!dataStr) continue;
+          for (const line of lines) {
+            if (line.startsWith("data: ")) {
+              const dataStr = line.slice(6).trim();
+              if (!dataStr) continue;
 
-            try {
-              const parsed = JSON.parse(dataStr) as SSEMessage;
-              onMessage(parsed);
-              if (parsed.type === "done") {
-                setIsStreaming(false);
-                return;
+              try {
+                const parsed = JSON.parse(dataStr) as SSEMessage;
+                onMessage(parsed);
+                if (parsed.type === "done") {
+                  setIsStreaming(false);
+                  return;
+                }
+              } catch {
+                // Skip malformed SSE lines
               }
-            } catch {
-              console.error("Failed to parse SSE JSON:", dataStr);
             }
           }
         }
+      } finally {
+        document.removeEventListener("visibilitychange", visHandler);
       }
     } catch (err: unknown) {
       if (err instanceof DOMException && err.name === "AbortError") {
-        console.log("Chat stream aborted");
+        // Expected on tab switch — visibilitychange handler in AgentWorkspace will reconnect
       } else {
         const message = err instanceof Error ? err.message : "Stream failed";
         console.error("Chat stream error:", err);

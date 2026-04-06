@@ -7,9 +7,13 @@ import {
   agentMessagesTable,
   agentFilesTable,
   activityLogTable,
+  agentJobEventsTable,
+  agentMemoryTable,
 } from "@workspace/db";
 import { eq, desc, or } from "drizzle-orm";
 import { runAgentChat, runAgentChatInternal } from "../lib/agentRunner";
+import { runOpenclawChat } from "../lib/openclawProxy";
+import { createJob, subscribeJob, getJobEvents, isJobDone, getActiveJob, hasActiveJob } from "../lib/agentEventBus";
 import { persistAndEmitActivity, agentStatusEmitter, emitAgentStatus } from "../lib/activityEmitter";
 import { requireApiKey } from "../middlewares/requireApiKey";
 
@@ -115,16 +119,93 @@ router.delete("/conversations/:id", requireApiKey, async (req, res): Promise<voi
   res.sendStatus(204);
 });
 
-// Agent chat - SSE streaming
+// Agent chat - fire-and-forget via event bus, returns jobId
 router.post("/agents/:id/chat", requireApiKey, async (req, res): Promise<void> => {
   const id = parseInt(Array.isArray(req.params.id) ? req.params.id[0]! : req.params.id, 10);
   const { content, conversationId } = req.body as { content: string; conversationId?: number };
+
+  if (hasActiveJob(id)) {
+    res.status(409).json({ error: "Agent is already processing a request" });
+    return;
+  }
+
+  const jobId = createJob(id);
+
+  // Start agent work in background (not tied to this response)
+  const [agent] = await db.select().from(agentsTable).where(eq(agentsTable.id, id));
+  if (agent?.openclawAgentId) {
+    runOpenclawChat(jobId, id, agent.openclawAgentId, content, conversationId ?? null).catch(console.error);
+  } else {
+    runAgentChat(jobId, id, content, conversationId ?? null).catch(console.error);
+  }
+
+  // Stream events to client from the bus
+  res.setHeader("Content-Type", "text/event-stream");
+  res.setHeader("Cache-Control", "no-cache");
+  res.setHeader("Connection", "keep-alive");
+
+  // Replay any events that already fired
+  for (const evt of getJobEvents(jobId)) {
+    res.write(`data: ${JSON.stringify({ type: evt.type, data: evt.data })}\n\n`);
+  }
+
+  if (isJobDone(jobId)) {
+    res.end();
+    return;
+  }
+
+  // Subscribe to new events
+  const unsub = subscribeJob(jobId, (evt) => {
+    try {
+      res.write(`data: ${JSON.stringify({ type: evt.type, data: evt.data })}\n\n`);
+    } catch {
+      // Client disconnected — that's fine, agent keeps working
+    }
+    if (evt.type === "done" || evt.type === "error") {
+      try { res.end(); } catch {}
+      unsub();
+    }
+  });
+
+  // If client disconnects, just unsubscribe (agent keeps working)
+  res.on("close", () => unsub());
+});
+
+// Reconnect to an active agent job (for tab switching)
+router.get("/agents/:id/job", requireApiKey, async (req, res): Promise<void> => {
+  const id = parseInt(Array.isArray(req.params.id) ? req.params.id[0]! : req.params.id, 10);
+  const jobId = getActiveJob(id);
+
+  if (!jobId) {
+    res.json({ active: false });
+    return;
+  }
 
   res.setHeader("Content-Type", "text/event-stream");
   res.setHeader("Cache-Control", "no-cache");
   res.setHeader("Connection", "keep-alive");
 
-  await runAgentChat(id, content, conversationId ?? null, res);
+  // Replay all events so far
+  for (const evt of getJobEvents(jobId)) {
+    res.write(`data: ${JSON.stringify({ type: evt.type, data: evt.data })}\n\n`);
+  }
+
+  if (isJobDone(jobId)) {
+    res.end();
+    return;
+  }
+
+  const unsub = subscribeJob(jobId, (evt) => {
+    try {
+      res.write(`data: ${JSON.stringify({ type: evt.type, data: evt.data })}\n\n`);
+    } catch {}
+    if (evt.type === "done" || evt.type === "error") {
+      try { res.end(); } catch {}
+      unsub();
+    }
+  });
+
+  res.on("close", () => unsub());
 });
 
 // Agent-to-agent messages (both sent and received for full collaboration traceability)
@@ -206,6 +287,41 @@ router.get("/agents/:id/files", requireApiKey, async (req, res): Promise<void> =
     .where(eq(agentFilesTable.agentId, agentId))
     .orderBy(desc(agentFilesTable.updatedAt));
   res.json(files);
+});
+
+// Agent memories
+router.get("/agents/:id/memories", requireApiKey, async (req, res): Promise<void> => {
+  const id = parseInt(Array.isArray(req.params.id) ? req.params.id[0]! : req.params.id, 10);
+  const memories = await db.select().from(agentMemoryTable)
+    .where(eq(agentMemoryTable.agentId, id))
+    .orderBy(desc(agentMemoryTable.relevanceScore))
+    .limit(50);
+  res.json(memories);
+});
+
+router.delete("/agents/:id/memories/:memId", requireApiKey, async (req, res): Promise<void> => {
+  const memId = parseInt(Array.isArray(req.params.memId) ? req.params.memId[0]! : req.params.memId, 10);
+  await db.delete(agentMemoryTable).where(eq(agentMemoryTable.id, memId));
+  res.sendStatus(204);
+});
+
+// Job event history (for time-travel debugging)
+router.get("/agents/:id/job-events", requireApiKey, async (req, res): Promise<void> => {
+  const id = parseInt(Array.isArray(req.params.id) ? req.params.id[0]! : req.params.id, 10);
+  const limit = parseInt(String(req.query.limit ?? "100"), 10);
+  const events = await db.select().from(agentJobEventsTable)
+    .where(eq(agentJobEventsTable.agentId, id))
+    .orderBy(desc(agentJobEventsTable.createdAt))
+    .limit(limit);
+  res.json(events);
+});
+
+router.get("/job-events/:jobId", requireApiKey, async (req, res): Promise<void> => {
+  const jobId = Array.isArray(req.params.jobId) ? req.params.jobId[0]! : req.params.jobId;
+  const events = await db.select().from(agentJobEventsTable)
+    .where(eq(agentJobEventsTable.jobId, jobId))
+    .orderBy(agentJobEventsTable.createdAt);
+  res.json(events);
 });
 
 export default router;

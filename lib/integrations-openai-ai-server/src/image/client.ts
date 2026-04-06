@@ -2,22 +2,14 @@ import fs from "node:fs";
 import OpenAI, { toFile } from "openai";
 import { Buffer } from "node:buffer";
 
-if (!process.env.AI_INTEGRATIONS_OPENAI_BASE_URL) {
-  throw new Error(
-    "AI_INTEGRATIONS_OPENAI_BASE_URL must be set. Did you forget to provision the OpenAI AI integration?",
-  );
+const apiKey = process.env.OPENROUTER_API_KEY || process.env.OPENAI_API_KEY;
+const baseURL = process.env.OPENROUTER_BASE_URL || "https://openrouter.ai/api/v1";
+
+if (!apiKey) {
+  throw new Error("OPENROUTER_API_KEY (or OPENAI_API_KEY) must be set.");
 }
 
-if (!process.env.AI_INTEGRATIONS_OPENAI_API_KEY) {
-  throw new Error(
-    "AI_INTEGRATIONS_OPENAI_API_KEY must be set. Did you forget to provision the OpenAI AI integration?",
-  );
-}
-
-export const openai = new OpenAI({
-  apiKey: process.env.AI_INTEGRATIONS_OPENAI_API_KEY,
-  baseURL: process.env.AI_INTEGRATIONS_OPENAI_BASE_URL,
-});
+export const openai = new OpenAI({ apiKey, baseURL });
 
 export async function generateImageBuffer(
   prompt: string,

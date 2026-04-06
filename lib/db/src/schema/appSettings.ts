@@ -4,7 +4,7 @@ import { z } from "zod/v4";
 
 export const appSettingsTable = pgTable("app_settings", {
   id: serial("id").primaryKey(),
-  aiModel: text("ai_model").notNull().default("gpt-5.2"),
+  aiModel: text("ai_model").notNull().default("google/gemini-2.5-flash"),
   openaiApiKey: text("openai_api_key"),
   anthropicApiKey: text("anthropic_api_key"),
   smtpHost: text("smtp_host"),

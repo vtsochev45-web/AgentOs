@@ -7,6 +7,7 @@ import settingsRouter from "./settings";
 import skillsRouter from "./skills";
 import openclawRouter from "./openclaw";
 import websiteRouter from "./website";
+import intelligenceRouter from "./intelligence";
 
 const router: IRouter = Router();
 
@@ -18,5 +19,6 @@ router.use(settingsRouter);
 router.use(skillsRouter);
 router.use(openclawRouter);
 router.use(websiteRouter);
+router.use(intelligenceRouter);
 
 export default router;

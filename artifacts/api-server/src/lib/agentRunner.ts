@@ -1,4 +1,6 @@
 import { openai } from "@workspace/integrations-openai-ai-server";
+import { emitJobEvent } from "./agentEventBus";
+import { getAgentMemories, reflectOnInteraction } from "./reflection";
 
 type ToolCallDef = {
   id: string;
@@ -21,7 +23,6 @@ import {
   appSettingsTable,
 } from "@workspace/db";
 import { eq, desc } from "drizzle-orm";
-import { type Response } from "express";
 import {
   webSearchTool,
   vpsShellTool,
@@ -37,12 +38,12 @@ import {
   websiteBuildTool,
   websiteDeployTool,
   websiteHealthCheckTool,
+  composePipelineTool,
+  contextSetTool,
+  contextGetTool,
 } from "./agentTools";
 import { persistAndEmitActivity, emitAgentStatus } from "./activityEmitter";
 
-function sendEvent(res: Response, data: Record<string, unknown>): void {
-  res.write(`data: ${JSON.stringify(data)}\n\n`);
-}
 
 async function setAgentStatus(agentId: number, status: string): Promise<void> {
   await db.update(agentsTable).set({ status, lastActiveAt: new Date() }).where(eq(agentsTable.id, agentId));
@@ -51,19 +52,19 @@ async function setAgentStatus(agentId: number, status: string): Promise<void> {
 
 async function getConfiguredModel(): Promise<string> {
   const [settings] = await db.select().from(appSettingsTable).limit(1);
-  return settings?.aiModel ?? "gpt-5.2";
+  return settings?.aiModel ?? "google/gemini-2.5-flash";
 }
 
 export async function runAgentChat(
+  jobId: string,
   agentId: number,
   userMessage: string,
   conversationId: number | null,
-  res: Response
 ): Promise<void> {
   const [agent] = await db.select().from(agentsTable).where(eq(agentsTable.id, agentId));
   if (!agent) {
-    sendEvent(res, { type: "error", data: "Agent not found" });
-    res.end();
+    emitJobEvent(jobId, "error", "Agent not found");
+    emitJobEvent(jobId, "done", null);
     return;
   }
 
@@ -92,7 +93,7 @@ export async function runAgentChat(
     .limit(20);
 
   await setAgentStatus(agentId, "thinking");
-  sendEvent(res, { type: "step", data: "Analysing your request..." });
+  emitJobEvent(jobId, "step", "Analysing your request...");
 
   void persistAndEmitActivity({
     agentId,
@@ -105,10 +106,16 @@ export async function runAgentChat(
   const tools = buildToolDefinitions(toolsEnabled);
   const sources: Array<{ title: string; url: string; snippet: string; favicon?: string | null }> = [];
 
+  // Load agent memories for context injection
+  const memories = await getAgentMemories(agentId);
+  const memoryBlock = memories.length > 0
+    ? `\n\nYour memories from past interactions:\n${memories.join("\n")}\n`
+    : "";
+
   const messages: ChatMsg[] = [
     {
       role: "system",
-      content: `You are ${agent.name}. ${agent.persona}
+      content: `You are ${agent.name}. ${agent.persona}${memoryBlock}
 
 You have access to tools and should use them when helpful. When you search the web, synthesize the results into a comprehensive answer with citations. After your final answer, always generate exactly 3 follow-up questions relevant to the topic.
 
@@ -156,7 +163,7 @@ Format your response as:
           let args: Record<string, unknown> = {};
           try { args = JSON.parse(tc.function.arguments); } catch {}
 
-          sendEvent(res, { type: "step", data: getToolStepMessage(fnName, args) });
+          emitJobEvent(jobId, "step", getToolStepMessage(fnName, args));
           await setAgentStatus(agentId, getToolStatus(fnName));
 
           let toolResult = "";
@@ -168,7 +175,7 @@ Format your response as:
               if (result.sources) {
                 sources.push(...result.sources);
                 for (const src of result.sources) {
-                  sendEvent(res, { type: "source", data: src });
+                  emitJobEvent(jobId, "source", src);
                 }
               }
             } else if (fnName === "vps_shell") {
@@ -192,17 +199,6 @@ Format your response as:
             } else if (fnName === "delegate_to_agent") {
               const result = await delegateToAgentTool(agentId, agent.name, String(args.to_agent ?? ""), String(args.task ?? ""));
               toolResult = result.output + (result.error ? `\nError: ${result.error}` : "");
-              if (result.delegationMessageId !== undefined) {
-                const msgId = result.delegationMessageId;
-                setImmediate(async () => {
-                  const toAgentName = String(args.to_agent ?? "");
-                  const { runAgentChatInternal } = await import("./agentRunner");
-                  const toAgentRow = await db.select().from(agentsTable).where(eq(agentsTable.name, toAgentName)).limit(1);
-                  if (toAgentRow[0]) {
-                    await runAgentChatInternal(toAgentRow[0].id, `[DELEGATION from ${agent.name}]: ${args.task}`, null, msgId).catch(console.error);
-                  }
-                });
-              }
             } else if (fnName === "send_webhook") {
               const payload = (args.payload as Record<string, unknown>) ?? { message: args.message ?? "Agent notification" };
               const result = await sendWebhookTool(agentId, agent.name, payload);
@@ -222,6 +218,16 @@ Format your response as:
             } else if (fnName === "website_health") {
               const result = await websiteHealthCheckTool(agentId, agent.name);
               toolResult = result.output + (result.error ? `\nError: ${result.error}` : "");
+            } else if (fnName === "compose_pipeline") {
+              const steps = (args.steps as Array<{ agent: string; task: string }>) ?? [];
+              const result = await composePipelineTool(agentId, agent.name, steps);
+              toolResult = result.output + (result.error ? `\nError: ${result.error}` : "");
+            } else if (fnName === "context_set") {
+              const result = await contextSetTool(agentId, agent.name, String(args.namespace ?? ""), String(args.key ?? ""), args.value);
+              toolResult = result.output + (result.error ? `\nError: ${result.error}` : "");
+            } else if (fnName === "context_get") {
+              const result = await contextGetTool(agentId, agent.name, String(args.namespace ?? ""), String(args.key ?? ""));
+              toolResult = result.output + (result.error ? `\nError: ${result.error}` : "");
             }
           } catch (err) {
             toolResult = `Error: ${err instanceof Error ? err.message : String(err)}`;
@@ -240,7 +246,7 @@ Format your response as:
     }
 
     await setAgentStatus(agentId, "writing");
-    sendEvent(res, { type: "step", data: "Composing answer..." });
+    emitJobEvent(jobId, "step", "Composing answer...");
 
     const followupMatch = finalAnswer.match(/FOLLOW_UPS:([\s\S]+)$/);
     let answerBody = finalAnswer;
@@ -259,7 +265,7 @@ Format your response as:
     const chunks = answerBody.split(/(?<=\. )|(?<=\n)/);
     for (const chunk of chunks) {
       if (chunk) {
-        sendEvent(res, { type: "content", data: chunk });
+        emitJobEvent(jobId, "content", chunk);
         await new Promise((r) => setTimeout(r, 10));
       }
     }
@@ -272,17 +278,20 @@ Format your response as:
     });
 
     if (followups.length > 0) {
-      sendEvent(res, { type: "followups", data: followups.slice(0, 3) });
+      emitJobEvent(jobId, "followups", followups.slice(0, 3));
     }
 
-    sendEvent(res, { type: "conversationId", data: convId });
-    sendEvent(res, { type: "done" });
+    emitJobEvent(jobId, "conversationId", convId);
+    emitJobEvent(jobId, "done", null);
+
+    // Reflection — extract memories async
+    reflectOnInteraction(agentId, agent.name, userMessage, answerBody, jobId).catch(() => {});
   } catch (err) {
     const errMsg = err instanceof Error ? err.message : String(err);
-    sendEvent(res, { type: "error", data: errMsg });
+    emitJobEvent(jobId, "error", errMsg);
+    emitJobEvent(jobId, "done", null);
   } finally {
     await setAgentStatus(agentId, "idle");
-    res.end();
   }
 }
 
@@ -490,6 +499,62 @@ function buildToolDefinitions(toolsEnabled: string[]) {
         parameters: { type: "object", properties: {} },
       },
     },
+    {
+      type: "function" as const,
+      function: {
+        name: "compose_pipeline",
+        description: "Run a sequence of agents as a pipeline. Each step's output feeds the next step via {previous_result}. Max 5 steps.",
+        parameters: {
+          type: "object",
+          properties: {
+            steps: {
+              type: "array",
+              items: {
+                type: "object",
+                properties: {
+                  agent: { type: "string", description: "Agent name to delegate to" },
+                  task: { type: "string", description: "Task description. Use {previous_result} to reference the previous step's output." },
+                },
+                required: ["agent", "task"],
+              },
+              description: "Ordered list of pipeline steps",
+            },
+          },
+          required: ["steps"],
+        },
+      },
+    },
+    {
+      type: "function" as const,
+      function: {
+        name: "context_set",
+        description: "Store a key-value pair in a shared namespace visible to all agents. Use for sharing research, decisions, or status between agents.",
+        parameters: {
+          type: "object",
+          properties: {
+            namespace: { type: "string", description: "Namespace (e.g., 'project-alpha', 'research')" },
+            key: { type: "string", description: "Key name" },
+            value: { description: "Value to store (any JSON)" },
+          },
+          required: ["namespace", "key", "value"],
+        },
+      },
+    },
+    {
+      type: "function" as const,
+      function: {
+        name: "context_get",
+        description: "Retrieve a value from a shared namespace.",
+        parameters: {
+          type: "object",
+          properties: {
+            namespace: { type: "string", description: "Namespace" },
+            key: { type: "string", description: "Key name" },
+          },
+          required: ["namespace", "key"],
+        },
+      },
+    },
   ];
 
   const toolMap: Record<string, typeof all[0]> = {
@@ -507,6 +572,9 @@ function buildToolDefinitions(toolsEnabled: string[]) {
     website_build: all[11]!,
     website_deploy: all[12]!,
     website_health: all[13]!,
+    compose_pipeline: all[14]!,
+    context_set: all[15]!,
+    context_get: all[16]!,
   };
 
   if (toolsEnabled.includes("all") || toolsEnabled.length === 0) return all;
@@ -630,16 +698,6 @@ Provide a clear, well-structured answer. End your response naturally.`,
             } else if (fnName === "delegate_to_agent") {
               const result = await delegateToAgentTool(agentId, agent.name, String(args.to_agent ?? ""), String(args.task ?? ""));
               toolResult = result.output + (result.error ? `\nError: ${result.error}` : "");
-              if (result.delegationMessageId !== undefined) {
-                const msgId = result.delegationMessageId;
-                setImmediate(async () => {
-                  const toAgentName = String(args.to_agent ?? "");
-                  const toAgentRow = await db.select().from(agentsTable).where(eq(agentsTable.name, toAgentName)).limit(1);
-                  if (toAgentRow[0]) {
-                    await runAgentChatInternal(toAgentRow[0].id, `[DELEGATION from ${agent.name}]: ${args.task}`, null, msgId).catch(console.error);
-                  }
-                });
-              }
             } else if (fnName === "send_webhook") {
               const payload = (args.payload as Record<string, unknown>) ?? { message: args.message ?? "Agent notification" };
               const result = await sendWebhookTool(agentId, agent.name, payload);
@@ -658,6 +716,16 @@ Provide a clear, well-structured answer. End your response naturally.`,
               toolResult = result.output + (result.error ? `\nError: ${result.error}` : "");
             } else if (fnName === "website_health") {
               const result = await websiteHealthCheckTool(agentId, agent.name);
+              toolResult = result.output + (result.error ? `\nError: ${result.error}` : "");
+            } else if (fnName === "compose_pipeline") {
+              const steps = (args.steps as Array<{ agent: string; task: string }>) ?? [];
+              const result = await composePipelineTool(agentId, agent.name, steps);
+              toolResult = result.output + (result.error ? `\nError: ${result.error}` : "");
+            } else if (fnName === "context_set") {
+              const result = await contextSetTool(agentId, agent.name, String(args.namespace ?? ""), String(args.key ?? ""), args.value);
+              toolResult = result.output + (result.error ? `\nError: ${result.error}` : "");
+            } else if (fnName === "context_get") {
+              const result = await contextGetTool(agentId, agent.name, String(args.namespace ?? ""), String(args.key ?? ""));
               toolResult = result.output + (result.error ? `\nError: ${result.error}` : "");
             }
           } catch (toolErr) {

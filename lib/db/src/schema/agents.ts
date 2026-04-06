@@ -9,6 +9,7 @@ export const agentsTable = pgTable("agents", {
   toolsEnabled: json("tools_enabled").$type<string[]>().notNull().default([]),
   status: text("status").notNull().default("idle"),
   lastActiveAt: timestamp("last_active_at"),
+  openclawAgentId: text("openclaw_agent_id"),
   createdAt: timestamp("created_at").notNull().defaultNow(),
 });
 

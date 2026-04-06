@@ -33,7 +33,7 @@ import {
   Save,
   Rocket,
 } from "lucide-react";
-import { apiFetch } from "@/lib/api";
+import { apiFetch, getApiKey } from "@/lib/api";
 import { formatDistanceToNow } from "date-fns";
 
 type WorkspaceTab = "chat" | "delegation" | "files" | "website";
@@ -231,7 +231,7 @@ export default function AgentWorkspace() {
     query: { queryKey: getGetConversationQueryKey(activeConvId || 0), enabled: !!activeConvId },
   });
 
-  const { streamChat, isStreaming, stopStream } = useSSEChat();
+  const { streamChat, isStreaming: hookStreaming, stopStream } = useSSEChat();
   const [input, setInput] = useState("");
 
   interface StreamSource { title: string; url: string; snippet: string; favicon?: string | null }
@@ -243,12 +243,117 @@ export default function AgentWorkspace() {
     followups: string[];
   } | null>(null);
 
+  const isStreaming = hookStreaming || streamData !== null;
+
   const [lastFollowups, setLastFollowups] = useState<string[]>([]);
   const messagesEndRef = useRef<HTMLDivElement>(null);
+  const reconnectAbortRef = useRef<AbortController | null>(null);
 
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [conversationData?.messages, streamData]);
+
+  // Check for active job — called on mount AND tab regain
+  const checkAndReconnect = async () => {
+    if (!agentId) return;
+
+    // Abort any previous reconnect stream
+    reconnectAbortRef.current?.abort();
+    reconnectAbortRef.current = new AbortController();
+
+    try {
+      const apiKey = getApiKey();
+      const headers: Record<string, string> = {};
+      if (apiKey) headers["X-API-Key"] = apiKey;
+
+      const res = await fetch(`/api/agents/${agentId}/job`, {
+        headers,
+        signal: reconnectAbortRef.current.signal,
+      });
+      if (!res.ok) return;
+
+      const contentType = res.headers.get("content-type") || "";
+
+      if (contentType.includes("application/json")) {
+        // No active job — agent is idle, clear any stale streaming state
+        setStreamData(null);
+        stopStream();
+        refetchMessages();
+        refetchConvos();
+        return;
+      }
+
+      if (contentType.includes("text/event-stream")) {
+        // Active job — reconnect and replay events
+        setStreamData({ content: "", steps: [], sources: [], followups: [] });
+
+        const reader = res.body!.getReader();
+        const decoder = new TextDecoder();
+        let buffer = "";
+
+        try {
+          while (true) {
+            const { done, value } = await reader.read();
+            if (done) break;
+            buffer += decoder.decode(value, { stream: true });
+            const lines = buffer.split("\n\n");
+            buffer = lines.pop() ?? "";
+            for (const line of lines) {
+              if (!line.startsWith("data: ")) continue;
+              try {
+                const msg = JSON.parse(line.slice(6).trim());
+                setStreamData((prev) => {
+                  if (!prev) return null;
+                  const next = { ...prev };
+                  if (msg.type === "step") next.steps = [...prev.steps, String(msg.data)];
+                  if (msg.type === "source") next.sources = [...prev.sources, msg.data];
+                  if (msg.type === "content") next.content = prev.content + String(msg.data);
+                  if (msg.type === "followups") {
+                    const fups = Array.isArray(msg.data) ? msg.data : [];
+                    next.followups = fups;
+                    setLastFollowups(fups);
+                  }
+                  if (msg.type === "conversationId" && typeof msg.data === "number") {
+                    setActiveConvId(msg.data);
+                  }
+                  return next;
+                });
+                if (msg.type === "done") {
+                  setStreamData(null);
+                  refetchMessages();
+                  refetchConvos();
+                  refetchMessages2();
+                  return;
+                }
+              } catch {}
+            }
+          }
+        } finally {
+          setStreamData(null);
+          refetchMessages();
+          refetchConvos();
+        }
+      }
+    } catch {
+      // Aborted or network error — fine
+    }
+  };
+
+  // Run on mount
+  useEffect(() => {
+    checkAndReconnect();
+  }, [agentId]);
+
+  // Run on tab regain (visibilitychange)
+  useEffect(() => {
+    const onVisible = () => {
+      if (document.visibilityState === "visible") {
+        checkAndReconnect();
+      }
+    };
+    document.addEventListener("visibilitychange", onVisible);
+    return () => document.removeEventListener("visibilitychange", onVisible);
+  }, [agentId]);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();

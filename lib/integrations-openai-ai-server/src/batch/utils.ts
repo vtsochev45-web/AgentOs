@@ -16,7 +16,7 @@ import pRetry, { AbortError } from "p-retry";
  *   artworks,
  *   async (artwork) => {
  *     const response = await openai.chat.completions.create({
- *       model: "gpt-5.2",
+ *       model: "google/gemini-2.5-flash",
  *       messages: [{ role: "user", content: `Categorize: ${artwork.name}` }],
  *       response_format: { type: "json_object" },
  *     });

@@ -322,9 +322,13 @@ function ProvidersTab({ settings }: { settings?: AppSettings }) {
   };
 
   const AI_MODELS = [
-    "gpt-4o", "gpt-4o-mini", "gpt-4-turbo", "gpt-3.5-turbo",
-    "claude-3-5-sonnet-20241022", "claude-3-5-haiku-20241022", "claude-3-opus-20240229",
-    "gpt-5.2",
+    "google/gemini-2.5-flash",
+    "google/gemini-2.5-pro",
+    "anthropic/claude-sonnet-4",
+    "anthropic/claude-haiku-4",
+    "openai/gpt-4o",
+    "openai/gpt-4o-mini",
+    "x-ai/grok-3",
   ];
 
   return (

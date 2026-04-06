@@ -1,9 +1,9 @@
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useMemo } from "react";
 import { useListAgents, useListActivity } from "@workspace/api-client-react";
 import { Link } from "wouter";
 import { AgentStatusBadge } from "@/components/ui/AgentStatusBadge";
-import { Brain, Cpu, Clock, TerminalSquare, AlertCircle, Plus, Activity, Wifi, WifiOff } from "lucide-react";
-import { formatDistanceToNow } from "date-fns";
+import { Brain, Cpu, Clock, TerminalSquare, AlertCircle, Plus, Activity, Wifi, WifiOff, Bot, CheckCircle2, ShieldAlert, Loader2, Terminal, ChevronDown, ChevronRight } from "lucide-react";
+import { formatDistanceToNow, format } from "date-fns";
 import { useSSEActivity, useSSEAgentStatus, type ActivityEvent } from "@/hooks/use-sse";
 import { useQueryClient } from "@tanstack/react-query";
 import { getListAgentsQueryKey } from "@workspace/api-client-react";
@@ -11,7 +11,7 @@ import type { Agent } from "@workspace/api-client-react";
 
 export default function Home() {
   const { data: agentsRaw, isLoading: isLoadingAgents } = useListAgents();
-  const { data: activitiesRaw, isLoading: isLoadingActivity } = useListActivity({ limit: 5 });
+  const { data: activitiesRaw, isLoading: isLoadingActivity } = useListActivity({ limit: 200 });
   const queryClient = useQueryClient();
 
   const [liveActivities, setLiveActivities] = useState<ActivityEvent[]>([]);
@@ -41,7 +41,38 @@ export default function Home() {
     }
   }, [sseEvents]);
 
-  const activities = liveActivities.length > 0 ? liveActivities : (activitiesRaw ?? []);
+  const allActivities = useMemo(() => {
+    const initial = (activitiesRaw ?? []) as ActivityEvent[];
+    const merged = [...liveActivities];
+    const ids = new Set(merged.map(e => e.id));
+    for (const e of initial) { if (!ids.has(e.id)) merged.push(e); }
+    return merged;
+  }, [activitiesRaw, liveActivities]);
+
+  // Group activities into task cards (same logic as Activity page)
+  const taskGroups = useMemo(() => {
+    const sorted = [...allActivities].sort((a, b) => {
+      const ta = a.timestamp ? new Date(a.timestamp).getTime() : 0;
+      const tb = b.timestamp ? new Date(b.timestamp).getTime() : 0;
+      return ta - tb;
+    });
+    interface TG { id: string; agentName: string; query: string; timestamp: string; events: ActivityEvent[]; status: string }
+    const groups: TG[] = [];
+    let current: TG | null = null;
+    for (const evt of sorted) {
+      if (evt.actionType === "chat" && evt.detail?.startsWith("Received:")) {
+        current = { id: `${evt.agentName}-${evt.timestamp}`, agentName: evt.agentName || "Agent", query: evt.detail.replace(/^Received:\s*"?|"?\s*$/g, ""), timestamp: evt.timestamp || "", events: [evt], status: "running" };
+        groups.push(current);
+      } else if (current && (evt.agentName === current.agentName || current.status === "running")) {
+        current.events.push(evt);
+        if (evt.actionType === "complete") current.status = "complete";
+        if (evt.actionType === "error") current.status = "error";
+      }
+    }
+    return groups.reverse().slice(0, 8);
+  }, [allActivities]);
+
+  const [expandedHome, setExpandedHome] = useState<string | null>(null);
 
   const agents = (agentsRaw ?? []).map((a) => ({
     ...a,
@@ -133,29 +164,49 @@ export default function Home() {
                <div className="animate-pulse space-y-4 pt-2">
                  {[1,2,3,4,5].map(i => <div key={i} className="h-10 bg-white/5 rounded-lg" />)}
                </div>
-            ) : activities.length === 0 ? (
+            ) : taskGroups.length === 0 ? (
               <div className="flex-1 flex items-center justify-center text-muted-foreground text-sm">
                 No recent activity.
               </div>
             ) : (
-              <div className="flex-1 overflow-y-auto space-y-3 pr-2 custom-scrollbar">
-                {activities.map((act, i) => (
-                  <div key={act.id ?? i} className="p-3 rounded-xl bg-black/20 border border-white/5 text-sm">
-                    <div className="flex items-center justify-between mb-1">
-                      <span className="font-semibold text-primary/90">{act.agentName ?? 'SYSTEM'}</span>
-                      <span className="text-[10px] text-muted-foreground font-mono">
-                        {act.timestamp ? formatDistanceToNow(new Date(act.timestamp), {addSuffix: true}) : 'just now'}
-                      </span>
+              <div className="flex-1 overflow-y-auto space-y-2 pr-2 custom-scrollbar">
+                {taskGroups.map((group) => {
+                  const isExp = expandedHome === group.id;
+                  const steps = group.events.filter(e => e.actionType !== "chat" || !e.detail?.startsWith("Received:"));
+                  const toolCount = steps.filter(e => ["tool", "tool_detail", "tool_call"].includes(e.actionType)).length;
+                  const completionEvt = steps.find(e => e.actionType === "complete");
+                  return (
+                    <div key={group.id} className="bg-black/20 border border-white/5 rounded-xl overflow-hidden">
+                      <div className="flex items-center gap-2.5 p-3 cursor-pointer select-none" onClick={() => setExpandedHome(isExp ? null : group.id)}>
+                        {group.status === "running" ? <Loader2 className="w-4 h-4 text-primary animate-spin shrink-0" /> : group.status === "error" ? <ShieldAlert className="w-4 h-4 text-destructive shrink-0" /> : <CheckCircle2 className="w-4 h-4 text-green-400 shrink-0" />}
+                        <div className="flex-1 min-w-0">
+                          <div className="flex items-center gap-1.5">
+                            <Bot className="w-3.5 h-3.5 text-primary shrink-0" />
+                            <span className="text-primary font-semibold text-xs">{group.agentName}</span>
+                            {toolCount > 0 && <span className="text-[9px] font-mono text-white/40 bg-white/5 px-1 py-0.5 rounded">{toolCount} tools</span>}
+                            {completionEvt && <span className="text-[9px] font-mono text-green-400/70 bg-green-400/10 px-1 py-0.5 rounded truncate">{completionEvt.detail?.substring(0, 40)}</span>}
+                          </div>
+                          <p className="text-white/80 text-xs mt-0.5 truncate">{group.query}</p>
+                        </div>
+                        <span className="text-[10px] text-muted-foreground font-mono shrink-0">{group.timestamp ? format(new Date(group.timestamp), "HH:mm") : ""}</span>
+                        {steps.length > 0 && (isExp ? <ChevronDown className="w-3.5 h-3.5 text-white/30 shrink-0" /> : <ChevronRight className="w-3.5 h-3.5 text-white/30 shrink-0" />)}
+                      </div>
+                      {isExp && steps.length > 0 && (
+                        <div className="border-t border-white/5 px-3 py-1.5 space-y-0.5 bg-black/20 max-h-32 overflow-y-auto custom-scrollbar">
+                          {steps.map((evt, i) => (
+                            <div key={evt.id ?? i} className="flex items-start gap-1.5 py-0.5">
+                              <Terminal className="w-3 h-3 text-white/30 mt-0.5 shrink-0" />
+                              <span className="text-[10px] text-white/60 font-mono break-all"><span className="text-white/30">{evt.actionType}:</span> {evt.detail}</span>
+                            </div>
+                          ))}
+                        </div>
+                      )}
                     </div>
-                    <div className="text-white/80">
-                      <span className="text-xs uppercase tracking-wider text-accent font-bold mr-2">[{act.actionType}]</span>
-                      {act.detail}
-                    </div>
-                  </div>
-                ))}
+                  );
+                })}
               </div>
             )}
-            <Link href="/activity" className="mt-4 text-center text-xs text-primary/70 hover:text-primary w-full py-2 bg-white/5 rounded-lg">
+            <Link href="/activity" className="mt-3 text-center text-xs text-primary/70 hover:text-primary w-full py-2 bg-white/5 rounded-lg">
               View Full Feed
             </Link>
           </div>

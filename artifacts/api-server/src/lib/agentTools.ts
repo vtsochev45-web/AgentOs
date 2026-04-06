@@ -1,7 +1,7 @@
 import path from "path";
 import os from "os";
 import { db } from "@workspace/db";
-import { activityLogTable, agentsTable, agentMessagesTable, agentFilesTable, appSettingsTable, websiteConfigsTable } from "@workspace/db";
+import { activityLogTable, agentsTable, agentMessagesTable, agentFilesTable, appSettingsTable, websiteConfigsTable, agentSharedContextTable } from "@workspace/db";
 import { eq, and } from "drizzle-orm";
 import { exec as sshExec, sftpReadFileById, sftpWriteFileById } from "./sshManager";
 import { emitActivity } from "./activityEmitter";
@@ -375,11 +375,38 @@ export async function delegateToAgentTool(
       .values({ fromAgentId, toAgentId: toAgent.id, content: task })
       .returning();
 
-    return {
-      success: true,
-      output: `Delegated to ${toAgent.name} (ID ${toAgent.id}). Message ID: ${msg?.id}. The agent will process this task autonomously.`,
-      delegationMessageId: msg?.id,
-    };
+    // Synchronous delegation — run the target agent and WAIT for the result
+    const { createJob, waitForJob } = await import("./agentEventBus");
+
+    // Check if target agent is OpenClaw-backed
+    if (toAgent.openclawAgentId) {
+      const { runOpenclawChat } = await import("./openclawProxy");
+      const subJobId = createJob(toAgent.id);
+      runOpenclawChat(subJobId, toAgent.id, toAgent.openclawAgentId, `[DELEGATION from ${fromAgentName}]: ${task}`, null).catch(console.error);
+      const result = await waitForJob(subJobId, 120_000); // 2 min timeout
+
+      if (msg) {
+        await db.update(agentMessagesTable).set({ response: result.answer || result.error || "" }).where(eq(agentMessagesTable.id, msg.id));
+      }
+
+      if (result.error) {
+        return { success: false, output: `${toAgentName} failed: ${result.error}`, error: result.error, delegationMessageId: msg?.id };
+      }
+      return { success: true, output: `${toAgentName} responded:\n${result.answer || "No response"}`, delegationMessageId: msg?.id };
+    }
+
+    // Local agent delegation
+    const { runAgentChatInternal } = await import("./agentRunner");
+    const subJobId = createJob(toAgent.id);
+
+    // runAgentChatInternal doesn't use the event bus yet — run it and wait
+    runAgentChatInternal(toAgent.id, `[DELEGATION from ${fromAgentName}]: ${task}`, null, msg?.id ?? null).catch(console.error);
+    const result = await waitForJob(subJobId, 120_000);
+
+    if (result.error) {
+      return { success: false, output: `${toAgentName} failed: ${result.error}`, error: result.error, delegationMessageId: msg?.id };
+    }
+    return { success: true, output: `${toAgentName} responded:\n${result.answer || "No response"}`, delegationMessageId: msg?.id };
   } catch (err) {
     const error = err instanceof Error ? err.message : String(err);
     return { success: false, output: "", error };
@@ -712,5 +739,96 @@ export async function websiteHealthCheckTool(
   } catch (err) {
     const error = err instanceof Error ? err.message : String(err);
     return { success: false, output: `UNREACHABLE — ${error}`, error };
+  }
+}
+
+/**
+ * Pipeline Composer — chains agents sequentially. Each step's output feeds the next.
+ */
+export async function composePipelineTool(
+  fromAgentId: number,
+  fromAgentName: string,
+  steps: Array<{ agent: string; task: string }>
+): Promise<ToolResult> {
+  if (!steps || steps.length === 0) {
+    return { success: false, output: "", error: "Pipeline requires at least one step" };
+  }
+  if (steps.length > 5) {
+    return { success: false, output: "", error: "Pipeline limited to 5 steps maximum" };
+  }
+
+  await logActivity(fromAgentId, fromAgentName, "pipeline", `Starting pipeline: ${steps.map(s => s.agent).join(" → ")}`);
+
+  const results: Array<{ agent: string; output: string; success: boolean }> = [];
+  let previousResult = "";
+
+  for (let i = 0; i < steps.length; i++) {
+    const step = steps[i]!;
+    // Substitute {previous_result} in task
+    const task = step.task.replace(/\{previous_result\}/g, previousResult);
+
+    const result = await delegateToAgentTool(fromAgentId, fromAgentName, step.agent, task);
+    const stepOutput = result.output || result.error || "No response";
+    results.push({ agent: step.agent, output: stepOutput, success: result.success });
+
+    if (!result.success) {
+      return {
+        success: false,
+        output: `Pipeline failed at step ${i + 1} (${step.agent}):\n${stepOutput}\n\nCompleted steps:\n${results.slice(0, -1).map((r, j) => `${j + 1}. ${r.agent}: ${r.output.substring(0, 200)}`).join("\n")}`,
+        error: `Pipeline failed at step ${i + 1}`,
+      };
+    }
+
+    previousResult = stepOutput;
+  }
+
+  await logActivity(fromAgentId, fromAgentName, "pipeline", `Pipeline complete: ${steps.length} steps`);
+
+  return {
+    success: true,
+    output: `Pipeline complete (${steps.length} steps):\n\n${results.map((r, i) => `--- Step ${i + 1}: ${r.agent} ---\n${r.output}`).join("\n\n")}`,
+  };
+}
+
+/**
+ * Shared Context — set a key/value in a namespace visible to all agents.
+ */
+export async function contextSetTool(
+  agentId: number,
+  agentName: string,
+  namespace: string,
+  key: string,
+  value: unknown
+): Promise<ToolResult> {
+  try {
+    await db.insert(agentSharedContextTable)
+      .values({ namespace, key, value, setByAgentId: agentId })
+      .onConflictDoUpdate({
+        target: [agentSharedContextTable.namespace, agentSharedContextTable.key],
+        set: { value, setByAgentId: agentId, updatedAt: new Date() },
+      });
+    return { success: true, output: `Set ${namespace}/${key}` };
+  } catch (err) {
+    return { success: false, output: "", error: err instanceof Error ? err.message : String(err) };
+  }
+}
+
+/**
+ * Shared Context — get a value from a namespace.
+ */
+export async function contextGetTool(
+  agentId: number,
+  agentName: string,
+  namespace: string,
+  key: string
+): Promise<ToolResult> {
+  try {
+    const [row] = await db.select().from(agentSharedContextTable)
+      .where(and(eq(agentSharedContextTable.namespace, namespace), eq(agentSharedContextTable.key, key)))
+      .limit(1);
+    if (!row) return { success: true, output: `No value found for ${namespace}/${key}` };
+    return { success: true, output: JSON.stringify(row.value) };
+  } catch (err) {
+    return { success: false, output: "", error: err instanceof Error ? err.message : String(err) };
   }
 }
