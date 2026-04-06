@@ -11,6 +11,7 @@ import { getOpenclawConfig, openclawHeaders } from "../routes/openclaw";
 import { persistAndEmitActivity, emitAgentStatus } from "./activityEmitter";
 import { emitJobEvent } from "./agentEventBus";
 import { reflectOnInteraction } from "./reflection";
+import { checkAgentBudget, recordAgentSpend } from "./autonomy";
 
 async function setAgentStatus(agentId: number, status: string): Promise<void> {
   await db.update(agentsTable).set({ status, lastActiveAt: new Date() }).where(eq(agentsTable.id, agentId));
@@ -59,6 +60,14 @@ export async function runOpenclawChat(
   });
 
   // Signal start
+  // Check budget before executing
+  const budget = await checkAgentBudget(agentId);
+  if (!budget.allowed) {
+    emitJobEvent(jobId, "error", `Budget exhausted: ${budget.reason}`);
+    emitJobEvent(jobId, "done", null);
+    return;
+  }
+
   await setAgentStatus(agentId, "thinking");
   emitJobEvent(jobId, "conversationId", convId);
   emitJobEvent(jobId, "step", `${agent.name} is thinking...`);
@@ -173,6 +182,11 @@ export async function runOpenclawChat(
     }
 
     emitJobEvent(jobId, "done", null);
+
+    // Record spend (approximate from tokens)
+    const tokensTotal = (meta.tokens_in || 0) + (meta.tokens_out || 0);
+    const approxCostCents = tokensTotal * 0.0005; // rough estimate
+    recordAgentSpend(agentId, approxCostCents).catch(() => {});
 
     // Reflection — extract memories async (fire-and-forget)
     reflectOnInteraction(agentId, agent.name, userMessage, answer, jobId).catch(() => {});

@@ -324,4 +324,27 @@ router.get("/job-events/:jobId", requireApiKey, async (req, res): Promise<void> 
   res.json(events);
 });
 
+// Agent budget management
+router.patch("/agents/:id/budget", requireApiKey, async (req, res): Promise<void> => {
+  const id = parseInt(Array.isArray(req.params.id) ? req.params.id[0]! : req.params.id, 10);
+  const { budgetDailyCents } = req.body as { budgetDailyCents: number | null };
+  const [agent] = await db.update(agentsTable)
+    .set({ budgetDailyCents: budgetDailyCents ?? null })
+    .where(eq(agentsTable.id, id)).returning();
+  if (!agent) { res.status(404).json({ error: "Agent not found" }); return; }
+  res.json(agent);
+});
+
+// Agent evolved persona
+router.get("/agents/:id/persona", requireApiKey, async (req, res): Promise<void> => {
+  const id = parseInt(Array.isArray(req.params.id) ? req.params.id[0]! : req.params.id, 10);
+  const [agent] = await db.select().from(agentsTable).where(eq(agentsTable.id, id));
+  if (!agent) { res.status(404).json({ error: "Agent not found" }); return; }
+  res.json({
+    original: agent.persona,
+    evolved: (agent as any).evolvedPersona || null,
+    version: (agent as any).personaVersion || 0,
+  });
+});
+
 export default router;

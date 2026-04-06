@@ -134,7 +134,7 @@ async function executeAgentRun(config: AgentRunConfig): Promise<void> {
   const messages: ChatMsg[] = [
     {
       role: "system",
-      content: `You are ${agent.name}. ${agent.persona}${memoryBlock}
+      content: `You are ${agent.name}. ${(agent as any).evolvedPersona || agent.persona}${memoryBlock}
 
 You have access to tools and should use them when helpful. When you search the web, synthesize the results into a comprehensive answer with citations. After your final answer, always generate exactly 3 follow-up questions relevant to the topic.
 

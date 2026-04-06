@@ -1,4 +1,4 @@
-import { pgTable, text, serial, timestamp, integer, jsonb } from "drizzle-orm/pg-core";
+import { pgTable, text, serial, timestamp, integer, jsonb, real } from "drizzle-orm/pg-core";
 import { agentsTable } from "./agents";
 
 export const agentGoalsTable = pgTable("agent_goals", {
@@ -14,6 +14,9 @@ export const agentGoalsTable = pgTable("agent_goals", {
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
   deadline: timestamp("deadline", { withTimezone: true }),
+  momentum: real("momentum").default(0),
+  stagnantTicks: integer("stagnant_ticks").default(0),
+  lastStepAt: timestamp("last_step_at", { withTimezone: true }),
 });
 
 export type AgentGoal = typeof agentGoalsTable.$inferSelect;
