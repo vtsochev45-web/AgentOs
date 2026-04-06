@@ -9,6 +9,7 @@ import openclawRouter from "./openclaw";
 import websiteRouter from "./website";
 import intelligenceRouter from "./intelligence";
 import goalsRouter from "./goals";
+import approvalsRouter from "./approvals";
 
 const router: IRouter = Router();
 
@@ -22,5 +23,6 @@ router.use(openclawRouter);
 router.use(websiteRouter);
 router.use(intelligenceRouter);
 router.use(goalsRouter);
+router.use(approvalsRouter);
 
 export default router;

@@ -6,6 +6,7 @@ import { db } from "@workspace/db";
 import { agentGoalsTable } from "@workspace/db";
 import { eq } from "drizzle-orm";
 import { executeNextStep } from "./goals";
+import { updateMemoryRelevance } from "./reflection";
 import { logger } from "./logger";
 
 let running = false;
@@ -29,6 +30,8 @@ async function tick(): Promise<void> {
         logger.error({ goalId: goal.id, err }, "Goal step execution error");
       }
     }
+    // Update memory relevance scores (every tick)
+    await updateMemoryRelevance().catch(() => {});
   } catch (err) {
     logger.error({ err }, "Goal scheduler tick error");
   } finally {

@@ -1,6 +1,6 @@
 import { openai } from "@workspace/integrations-openai-ai-server";
 import { emitJobEvent } from "./agentEventBus";
-import { getAgentMemories, reflectOnInteraction } from "./reflection";
+import { getAgentMemories, reflectOnInteraction, getStrategyHints } from "./reflection";
 
 type ToolCallDef = {
   id: string;
@@ -124,11 +124,12 @@ async function executeAgentRun(config: AgentRunConfig): Promise<void> {
   const tools = buildToolDefinitions(toolsEnabled);
   const sources: Array<{ title: string; url: string; snippet: string; favicon?: string | null }> = [];
 
-  // Load agent memories
+  // Load agent memories + strategy hints
   const memories = await getAgentMemories(agentId);
+  const strategyHints = await getStrategyHints(agentId);
   const memoryBlock = memories.length > 0
-    ? `\n\nYour memories from past interactions:\n${memories.join("\n")}\n`
-    : "";
+    ? `\n\nYour memories from past interactions:\n${memories.join("\n")}${strategyHints}\n`
+    : strategyHints ? `\n${strategyHints}\n` : "";
 
   const messages: ChatMsg[] = [
     {

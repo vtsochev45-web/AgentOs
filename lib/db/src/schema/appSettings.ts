@@ -1,4 +1,4 @@
-import { pgTable, text, serial, timestamp, integer } from "drizzle-orm/pg-core";
+import { pgTable, text, serial, timestamp, integer, numeric, boolean } from "drizzle-orm/pg-core";
 import { createInsertSchema } from "drizzle-zod";
 import { z } from "zod/v4";
 
@@ -16,6 +16,9 @@ export const appSettingsTable = pgTable("app_settings", {
   braveApiKey: text("brave_api_key"),
   openclawInstanceUrl: text("openclaw_instance_url"),
   openclawApiKey: text("openclaw_api_key"),
+  costBudgetDaily: numeric("cost_budget_daily", { precision: 10, scale: 2 }),
+  costBudgetMonthly: numeric("cost_budget_monthly", { precision: 10, scale: 2 }),
+  autoRouting: boolean("auto_routing").default(false),
   updatedAt: timestamp("updated_at").notNull().defaultNow(),
 });
 

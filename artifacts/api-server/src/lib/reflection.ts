@@ -3,8 +3,8 @@
  * Stores them as agent memories for future context injection.
  */
 import { db } from "@workspace/db";
-import { agentMemoryTable, appSettingsTable } from "@workspace/db";
-import { eq, desc } from "drizzle-orm";
+import { agentMemoryTable, appSettingsTable, agentJobEventsTable } from "@workspace/db";
+import { eq, desc, lt, sql } from "drizzle-orm";
 import { openai } from "@workspace/integrations-openai-ai-server";
 
 /**
@@ -104,5 +104,57 @@ export async function getAgentMemories(agentId: number, limit = 10): Promise<str
     return memories.map((m) => `[${m.category}] ${m.content}`);
   } catch {
     return [];
+  }
+}
+
+/**
+ * Decay relevance scores for memories not accessed in 7+ days.
+ * Boost memories from "failure" category (learn from mistakes).
+ * Called periodically by the goal scheduler.
+ */
+export async function updateMemoryRelevance(): Promise<void> {
+  try {
+    const sevenDaysAgo = new Date(Date.now() - 7 * 86400_000);
+
+    // Decay unused memories
+    await db.update(agentMemoryTable)
+      .set({ relevanceScore: sql`GREATEST(relevance_score * 0.9, 0.1)` })
+      .where(lt(agentMemoryTable.lastAccessedAt, sevenDaysAgo));
+
+    // Boost failure memories (lessons learned are valuable)
+    await db.update(agentMemoryTable)
+      .set({ relevanceScore: sql`LEAST(relevance_score * 1.1, 2.0)` })
+      .where(eq(agentMemoryTable.category, "failure"));
+  } catch {
+    // Best effort
+  }
+}
+
+/**
+ * Generate strategy hints for an agent based on performance data.
+ */
+export async function getStrategyHints(agentId: number): Promise<string> {
+  try {
+    const since = new Date(Date.now() - 7 * 86400_000);
+    const rows = await db.execute(sql`
+      SELECT
+        COUNT(DISTINCT job_id) as total_jobs,
+        AVG((event_data->>'duration_ms')::int) as avg_duration,
+        AVG((event_data->>'tokens_out')::int) as avg_tokens,
+        SUM(CASE WHEN event_type = 'error' THEN 1 ELSE 0 END) as errors
+      FROM agent_job_events
+      WHERE agent_id = ${agentId}
+        AND created_at >= ${since}
+    `);
+
+    const r = (rows.rows as any[])[0];
+    if (!r || !r.total_jobs || Number(r.total_jobs) < 2) return "";
+
+    const avgSec = (Number(r.avg_duration) / 1000).toFixed(1);
+    const errorPct = Math.round((Number(r.errors) / Number(r.total_jobs)) * 100);
+
+    return `\nYour recent performance (7d): ${r.total_jobs} tasks, avg ${avgSec}s, ${errorPct}% errors. Be efficient and concise.`;
+  } catch {
+    return "";
   }
 }
