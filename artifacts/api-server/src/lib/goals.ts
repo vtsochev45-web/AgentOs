@@ -10,6 +10,7 @@ import { createJob, hasActiveJob, emitJobEvent } from "./agentEventBus";
 import { runOpenclawChat } from "./openclawProxy";
 import { runAgentChat } from "./agentRunner";
 import { persistAndEmitActivity } from "./activityEmitter";
+import { selectAgent } from "./smartRouter";
 
 async function getModel(): Promise<string> {
   const { appSettingsTable } = await import("@workspace/db");
@@ -97,9 +98,6 @@ export async function executeNextStep(goalId: number): Promise<{ executed: boole
   const [goal] = await db.select().from(agentGoalsTable).where(eq(agentGoalsTable.id, goalId));
   if (!goal || goal.status !== "active") return { executed: false, error: "Goal not active" };
 
-  // Check if agent is busy
-  if (hasActiveJob(goal.agentId)) return { executed: false, error: "Agent is busy" };
-
   // Find next pending step
   const [step] = await db.select().from(agentGoalStepsTable)
     .where(and(eq(agentGoalStepsTable.goalId, goalId), eq(agentGoalStepsTable.status, "pending")))
@@ -107,30 +105,46 @@ export async function executeNextStep(goalId: number): Promise<{ executed: boole
     .limit(1);
 
   if (!step) {
-    // All steps done — mark goal complete
     await db.update(agentGoalsTable).set({ status: "completed", progress: 100, updatedAt: new Date() }).where(eq(agentGoalsTable.id, goalId));
     return { executed: false, error: "All steps complete" };
   }
 
+  // Smart routing: pick the best agent for this step
+  const routed = await selectAgent(step.description);
+  const targetAgentId = routed?.agentId ?? goal.agentId;
+
+  // Check if target agent is busy
+  if (hasActiveJob(targetAgentId)) {
+    // Try the goal's default agent as fallback
+    if (targetAgentId !== goal.agentId && !hasActiveJob(goal.agentId)) {
+      // Fallback to default agent
+    } else {
+      return { executed: false, error: `Agent ${routed?.agentName || "assigned"} is busy` };
+    }
+  }
+
+  const effectiveAgentId = hasActiveJob(targetAgentId) ? goal.agentId : targetAgentId;
+
   // Mark step as running
   await db.update(agentGoalStepsTable).set({ status: "running" }).where(eq(agentGoalStepsTable.id, step.id));
 
-  // Execute via agent
-  const [agent] = await db.select().from(agentsTable).where(eq(agentsTable.id, goal.agentId));
+  // Execute via the selected agent
+  const [agent] = await db.select().from(agentsTable).where(eq(agentsTable.id, effectiveAgentId));
   if (!agent) return { executed: false, error: "Agent not found" };
 
-  const jobId = createJob(goal.agentId);
+  const jobId = createJob(effectiveAgentId);
+  const routeNote = effectiveAgentId !== goal.agentId ? ` (routed to ${agent.name}: ${routed?.reason || "best match"})` : "";
   const prompt = `[GOAL: ${goal.title}]\nExecute this step: ${step.description}${goal.successCriteria ? `\nSuccess criteria: ${goal.successCriteria}` : ""}`;
 
   // Fire-and-forget — the event bus will track completion
   if (agent.openclawAgentId) {
-    runOpenclawChat(jobId, goal.agentId, agent.openclawAgentId, prompt, null).then(async () => {
+    runOpenclawChat(jobId, effectiveAgentId, agent.openclawAgentId, prompt, null).then(async () => {
       await onStepComplete(goalId, step.id, jobId);
     }).catch(async (err) => {
       await onStepFailed(goalId, step.id, String(err));
     });
   } else {
-    runAgentChat(jobId, goal.agentId, prompt, null).then(async () => {
+    runAgentChat(jobId, effectiveAgentId, prompt, null).then(async () => {
       await onStepComplete(goalId, step.id, jobId);
     }).catch(async (err) => {
       await onStepFailed(goalId, step.id, String(err));
@@ -138,10 +152,10 @@ export async function executeNextStep(goalId: number): Promise<{ executed: boole
   }
 
   void persistAndEmitActivity({
-    agentId: goal.agentId,
+    agentId: effectiveAgentId,
     agentName: agent.name,
     actionType: "goal_step",
-    detail: `Step ${step.stepOrder}: ${step.description.substring(0, 80)}`,
+    detail: `Step ${step.stepOrder}: ${step.description.substring(0, 80)}${routeNote}`,
     timestamp: new Date().toISOString(),
   });
 
