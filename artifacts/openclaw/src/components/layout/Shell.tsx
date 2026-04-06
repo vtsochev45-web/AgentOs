@@ -8,6 +8,7 @@ import {
   LayoutDashboard,
   Bot,
   Brain,
+  Target,
 } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
 
@@ -23,6 +24,7 @@ export function Shell({ children }: ShellProps) {
     { path: "/agents", icon: Bot, label: "Agents" },
     { path: "/vps", icon: TerminalSquare, label: "VPS" },
     { path: "/network", icon: Network, label: "Network" },
+    { path: "/goals", icon: Target, label: "Goals" },
     { path: "/activity", icon: Activity, label: "Activity" },
     { path: "/intelligence", icon: Brain, label: "Intel" },
     { path: "/settings", icon: Settings, label: "Config" },

@@ -2,6 +2,7 @@ import http from "http";
 import app from "./app";
 import { logger } from "./lib/logger";
 import { setupWebSocketTerminal } from "./lib/wsTerminal";
+import { startGoalScheduler } from "./lib/goalScheduler";
 
 const rawPort = process.env["PORT"];
 
@@ -23,6 +24,7 @@ setupWebSocketTerminal(server);
 
 server.listen(port, () => {
   logger.info({ port }, "Server listening");
+  startGoalScheduler();
 });
 
 server.on("error", (err) => {

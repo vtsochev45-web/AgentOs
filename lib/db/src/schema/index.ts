@@ -12,3 +12,6 @@ export * from "./agentJobEvents";
 export * from "./agentMemory";
 export * from "./agentSharedContext";
 export * from "./modelPricing";
+export * from "./agentGoals";
+export * from "./agentGoalSteps";
+export * from "./approvalRequests";
