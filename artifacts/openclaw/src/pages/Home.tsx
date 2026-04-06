@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback, useMemo } from "react";
+import { useState, useEffect, useCallback } from "react";
 import { useListAgents, useListActivity } from "@workspace/api-client-react";
 import { Link } from "wouter";
 import { AgentStatusBadge } from "@/components/ui/AgentStatusBadge";
@@ -8,6 +8,7 @@ import { useSSEActivity, useSSEAgentStatus, type ActivityEvent } from "@/hooks/u
 import { useQueryClient } from "@tanstack/react-query";
 import { getListAgentsQueryKey } from "@workspace/api-client-react";
 import type { Agent } from "@workspace/api-client-react";
+import { useTaskGroups } from "@/hooks/use-task-grouping";
 
 export default function Home() {
   const { data: agentsRaw, isLoading: isLoadingAgents } = useListAgents();
@@ -49,28 +50,7 @@ export default function Home() {
     return merged;
   }, [activitiesRaw, liveActivities]);
 
-  // Group activities into task cards (same logic as Activity page)
-  const taskGroups = useMemo(() => {
-    const sorted = [...allActivities].sort((a, b) => {
-      const ta = a.timestamp ? new Date(a.timestamp).getTime() : 0;
-      const tb = b.timestamp ? new Date(b.timestamp).getTime() : 0;
-      return ta - tb;
-    });
-    interface TG { id: string; agentName: string; query: string; timestamp: string; events: ActivityEvent[]; status: string }
-    const groups: TG[] = [];
-    let current: TG | null = null;
-    for (const evt of sorted) {
-      if (evt.actionType === "chat" && evt.detail?.startsWith("Received:")) {
-        current = { id: `${evt.agentName}-${evt.timestamp}`, agentName: evt.agentName || "Agent", query: evt.detail.replace(/^Received:\s*"?|"?\s*$/g, ""), timestamp: evt.timestamp || "", events: [evt], status: "running" };
-        groups.push(current);
-      } else if (current && (evt.agentName === current.agentName || current.status === "running")) {
-        current.events.push(evt);
-        if (evt.actionType === "complete") current.status = "complete";
-        if (evt.actionType === "error") current.status = "error";
-      }
-    }
-    return groups.reverse().slice(0, 8);
-  }, [allActivities]);
+  const taskGroups = useTaskGroups(allActivities, 8);
 
   const [expandedHome, setExpandedHome] = useState<string | null>(null);
 

@@ -1,66 +1,9 @@
-import { useEffect, useState, useMemo } from "react";
+import { useEffect, useState } from "react";
 import { useListActivity } from "@workspace/api-client-react";
 import { Activity as ActivityIcon, CheckCircle2, Terminal, Globe, FileCode2, MessageSquare, ShieldAlert, Wifi, WifiOff, GitBranch, ChevronDown, ChevronRight, Bot, Loader2 } from "lucide-react";
 import { format } from "date-fns";
 import { useSSEActivity, type ActivityEvent } from "@/hooks/use-sse";
-
-interface TaskGroup {
-  id: string;
-  agentName: string;
-  query: string;
-  timestamp: string;
-  events: ActivityEvent[];
-  status: "running" | "complete" | "error";
-}
-
-function groupActivities(activities: ActivityEvent[]): TaskGroup[] {
-  const groups: TaskGroup[] = [];
-  let current: TaskGroup | null = null;
-
-  // Process in chronological order (oldest first) then reverse
-  const sorted = [...activities].sort((a, b) => {
-    const ta = a.timestamp ? new Date(a.timestamp).getTime() : 0;
-    const tb = b.timestamp ? new Date(b.timestamp).getTime() : 0;
-    return ta - tb;
-  });
-
-  for (const evt of sorted) {
-    if (evt.actionType === "chat" && evt.detail?.startsWith("Received:")) {
-      // New task — start a new group
-      current = {
-        id: `${evt.agentName}-${evt.timestamp}`,
-        agentName: evt.agentName || "Agent",
-        query: evt.detail.replace(/^Received:\s*"?|"?\s*$/g, ""),
-        timestamp: evt.timestamp || "",
-        events: [evt],
-        status: "running",
-      };
-      groups.push(current);
-    } else if (current && evt.agentName === current.agentName) {
-      current.events.push(evt);
-      if (evt.actionType === "complete") current.status = "complete";
-      if (evt.actionType === "error") current.status = "error";
-    } else if (current) {
-      // Different agent — might be delegation, still attach to current task
-      current.events.push(evt);
-      if (evt.actionType === "complete") current.status = "complete";
-    } else {
-      // Orphan event — create standalone group
-      groups.push({
-        id: `${evt.agentName}-${evt.timestamp}-${evt.id}`,
-        agentName: evt.agentName || "System",
-        query: evt.detail || evt.actionType,
-        timestamp: evt.timestamp || "",
-        events: [evt],
-        status: evt.actionType === "error" ? "error" : "complete",
-      });
-    }
-  }
-
-  // Reverse so newest first
-  return groups.reverse();
-}
-
+import { useTaskGroups, type TaskGroup } from "@/hooks/use-task-grouping";
 const getStepIcon = (type: string) => {
   switch (type.toLowerCase()) {
     case "search": return <Globe className="w-3.5 h-3.5 text-yellow-400" />;
@@ -108,7 +51,7 @@ export default function Activity() {
     }
   }, [sseEvents]);
 
-  const groups = useMemo(() => groupActivities(activities), [activities]);
+  const groups = useTaskGroups(activities);
 
   // Auto-expand the latest running group
   useEffect(() => {
