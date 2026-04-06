@@ -1,12 +1,13 @@
 import { ReactNode } from "react";
 import { Link, useLocation } from "wouter";
-import { 
-  TerminalSquare, 
-  Network, 
-  Activity, 
-  Settings, 
-  LayoutDashboard, 
+import {
+  TerminalSquare,
+  Network,
+  Activity,
+  Settings,
+  LayoutDashboard,
   Bot,
+  Brain,
 } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
 
@@ -23,6 +24,7 @@ export function Shell({ children }: ShellProps) {
     { path: "/vps", icon: TerminalSquare, label: "VPS" },
     { path: "/network", icon: Network, label: "Network" },
     { path: "/activity", icon: Activity, label: "Activity" },
+    { path: "/intelligence", icon: Brain, label: "Intel" },
     { path: "/settings", icon: Settings, label: "Config" },
   ];
 

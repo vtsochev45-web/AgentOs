@@ -12,6 +12,7 @@ import VPS from "@/pages/VPS";
 import Network from "@/pages/Network";
 import Activity from "@/pages/Activity";
 import Settings from "@/pages/Settings";
+import Intelligence from "@/pages/Intelligence";
 import NotFound from "@/pages/not-found";
 
 setApiKeyGetter(() => localStorage.getItem("openclaw_api_key"));
@@ -35,6 +36,7 @@ function Router() {
         <Route path="/vps" component={VPS} />
         <Route path="/network" component={Network} />
         <Route path="/activity" component={Activity} />
+        <Route path="/intelligence" component={Intelligence} />
         <Route path="/settings" component={Settings} />
         <Route component={NotFound} />
       </Switch>
