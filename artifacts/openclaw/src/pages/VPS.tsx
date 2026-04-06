@@ -21,21 +21,21 @@ export default function VPS() {
   ];
 
   return (
-    <div className="max-w-7xl mx-auto h-full flex flex-col">
-      <header className="mb-6 flex justify-between items-end shrink-0">
-        <div>
-          <h1 className="text-3xl font-bold text-white tracking-tight flex items-center gap-3">
-            <Server className="w-8 h-8 text-primary" />
+    <div className="max-w-7xl mx-auto h-full flex flex-col overflow-hidden">
+      <header className="mb-3 md:mb-6 shrink-0">
+        <div className="flex items-center justify-between gap-2 mb-2">
+          <h1 className="text-2xl md:text-3xl font-bold text-white tracking-tight flex items-center gap-2">
+            <Server className="w-6 h-6 md:w-8 md:h-8 text-primary shrink-0" />
             VPS Uplink
           </h1>
-          <p className="text-muted-foreground mt-2 text-sm font-mono">DIRECT SECURE SHELL & TELEMETRY</p>
+          <p className="text-muted-foreground text-[10px] md:text-sm font-mono hidden md:block">DIRECT SECURE SHELL & TELEMETRY</p>
         </div>
-        <div className="flex bg-black/40 p-1 rounded-lg border border-white/10 overflow-x-auto">
+        <div className="flex bg-black/40 p-1 rounded-lg border border-white/10 overflow-x-auto no-scrollbar">
           {tabs.map(t => (
             <button
               key={t.id}
               onClick={() => setActiveTab(t.id)}
-              className={`px-3 py-1.5 rounded-md text-sm font-medium capitalize transition-all whitespace-nowrap ${activeTab === t.id ? 'bg-white/10 text-white shadow-sm' : 'text-muted-foreground hover:text-white/80'}`}
+              className={`px-2.5 md:px-3 py-1.5 rounded-md text-xs md:text-sm font-medium capitalize transition-all whitespace-nowrap ${activeTab === t.id ? 'bg-white/10 text-white shadow-sm' : 'text-muted-foreground hover:text-white/80'}`}
             >
               {t.label}
             </button>
@@ -43,7 +43,7 @@ export default function VPS() {
         </div>
       </header>
 
-      <div className="flex-1 glass-panel rounded-2xl overflow-hidden relative flex flex-col">
+      <div className="flex-1 glass-panel rounded-2xl overflow-hidden relative flex flex-col min-h-0">
         {activeTab === 'terminal' && <TerminalView />}
         {activeTab === 'stats' && <StatsView />}
         {activeTab === 'services' && <ServicesView />}
