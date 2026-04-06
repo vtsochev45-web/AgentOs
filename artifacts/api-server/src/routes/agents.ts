@@ -257,20 +257,56 @@ router.post("/agents/:id/messages", requireApiKey, async (req, res): Promise<voi
 
 // Network edges — real agent message pairs for graph visualization
 router.get("/network/edges", requireApiKey, async (req, res): Promise<void> => {
+  const edgeMap = new Map<string, { source: number; target: number; count: number }>();
+
+  // Edges from delegation messages
   const msgs = await db
     .select()
     .from(agentMessagesTable)
     .orderBy(desc(agentMessagesTable.timestamp))
     .limit(200);
 
-  const edgeMap = new Map<string, { source: number; target: number; count: number }>();
   for (const msg of msgs) {
     const key = `${msg.fromAgentId}-${msg.toAgentId}`;
     const existing = edgeMap.get(key);
-    if (existing) {
-      existing.count++;
-    } else {
-      edgeMap.set(key, { source: msg.fromAgentId, target: msg.toAgentId, count: 1 });
+    if (existing) existing.count++;
+    else edgeMap.set(key, { source: msg.fromAgentId, target: msg.toAgentId, count: 1 });
+  }
+
+  // Edges from activity log (agent interactions via delegation mentions)
+  const activities = await db.select().from(activityLogTable)
+    .where(eq(activityLogTable.actionType, "delegated"))
+    .orderBy(desc(activityLogTable.timestamp))
+    .limit(100);
+
+  // Get agent name → id map
+  const allAgents = await db.select().from(agentsTable);
+  const nameToId = new Map(allAgents.map(a => [a.name.toLowerCase(), a.id]));
+
+  for (const act of activities) {
+    if (!act.agentId || !act.agentName) continue;
+    const targetId = nameToId.get(act.agentName.toLowerCase());
+    if (targetId && targetId !== act.agentId) {
+      const key = `${act.agentId}-${targetId}`;
+      const existing = edgeMap.get(key);
+      if (existing) existing.count++;
+      else edgeMap.set(key, { source: act.agentId, target: targetId, count: 1 });
+    }
+  }
+
+  // Also create edges from shared goal execution (agents working on same goals)
+  const { agentGoalsTable } = await import("@workspace/db");
+  const goals = await db.select().from(agentGoalsTable).limit(50);
+  const goalAgents = goals.map(g => g.agentId);
+  // Connect agents that share goals (lightweight mesh)
+  for (let i = 0; i < goalAgents.length; i++) {
+    for (let j = i + 1; j < goalAgents.length; j++) {
+      if (goalAgents[i] !== goalAgents[j]) {
+        const key = `${goalAgents[i]}-${goalAgents[j]}`;
+        if (!edgeMap.has(key)) {
+          edgeMap.set(key, { source: goalAgents[i]!, target: goalAgents[j]!, count: 1 });
+        }
+      }
     }
   }
 

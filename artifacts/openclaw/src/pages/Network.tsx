@@ -59,28 +59,50 @@ export default function Network() {
 
     d3.select(svgRef.current).call(zoom);
 
-    const nodes: SimNode[] = agents.map(a => ({
-      id: a.id,
-      name: a.name,
-      status: a.status ?? "idle",
-      group: 1,
-    }));
+    // Hub node (AgentOS core) + agent nodes
+    const hubId = -1;
+    const nodes: SimNode[] = [
+      { id: hubId, name: "AgentOS", status: "active", group: 0 },
+      ...agents.map(a => ({
+        id: a.id,
+        name: a.name,
+        status: a.status ?? "idle",
+        group: 1,
+      })),
+    ];
 
     const nodeIdSet = new Set(nodes.map(n => n.id));
+
+    // Connect every agent to the hub
+    const links: SimLink[] = agents.map(a => ({
+      source: hubId,
+      target: a.id,
+      value: 1,
+    }));
+
+    // Add real edges from delegation data
     const realEdges = (edges ?? []).filter(
       e => nodeIdSet.has(e.source) && nodeIdSet.has(e.target)
     );
+    for (const e of realEdges) {
+      links.push({ source: e.source, target: e.target, value: e.count });
+    }
 
-    const links: SimLink[] = realEdges.map(e => ({
-      source: e.source,
-      target: e.target,
-      value: e.count,
-    }));
+    // Place nodes in a circle initially so they don't fly off-screen
+    const cx = width / 2;
+    const cy = height / 2;
+    const radius = Math.min(width, height) * 0.3;
+    nodes.forEach((n, i) => {
+      const angle = (2 * Math.PI * i) / nodes.length;
+      n.x = cx + radius * Math.cos(angle);
+      n.y = cy + radius * Math.sin(angle);
+    });
 
     const simulation = d3.forceSimulation<SimNode>(nodes)
-      .force("link", d3.forceLink<SimNode, SimLink>(links).id(d => d.id).distance(150))
-      .force("charge", d3.forceManyBody().strength(-400))
-      .force("center", d3.forceCenter(width / 2, height / 2));
+      .force("link", d3.forceLink<SimNode, SimLink>(links).id(d => d.id).distance(120))
+      .force("charge", d3.forceManyBody().strength(-200))
+      .force("center", d3.forceCenter(cx, cy))
+      .force("collision", d3.forceCollide(50));
 
     const link = svg.append("g")
       .attr("stroke", "rgba(6, 182, 212, 0.3)")
@@ -96,8 +118,13 @@ export default function Network() {
       .selectAll<SVGCircleElement, SimNode>("circle")
       .data(nodes)
       .join("circle")
-      .attr("r", 18)
-      .attr("fill", "#0A0F1C")
+      .attr("r", d => d.group === 0 ? 28 : 18)
+      .attr("fill", d => {
+        if (d.group === 0) return "#06b6d4"; // Hub
+        if (d.status === "thinking" || d.status === "executing" || d.status === "writing" || d.status === "searching") return "#06b6d4";
+        if (d.status === "delegating") return "#a855f7";
+        return "#0A0F1C";
+      })
       .call(drag(simulation));
 
     const pulseRing = svg.append("g")
@@ -105,11 +132,14 @@ export default function Network() {
       .data(nodes)
       .join("circle")
       .attr("class", "pulse")
-      .attr("r", 18)
+      .attr("r", d => d.group === 0 ? 28 : 18)
       .attr("fill", "none")
-      .attr("stroke", "#06b6d4")
-      .attr("stroke-width", 1)
-      .attr("opacity", 0.4);
+      .attr("stroke", d => {
+        if (d.status !== "idle") return "#06b6d4";
+        return "rgba(6, 182, 212, 0.3)";
+      })
+      .attr("stroke-width", d => d.status !== "idle" ? 2 : 1)
+      .attr("opacity", d => d.status !== "idle" ? 0.8 : 0.3);
 
     const labels = svg.append("g")
       .selectAll<SVGTextElement, SimNode>("text")
@@ -120,7 +150,20 @@ export default function Network() {
       .attr("font-family", "Space Grotesk, sans-serif")
       .attr("fill", "#fff")
       .attr("dx", 24)
-      .attr("dy", 4)
+      .attr("dy", 0)
+      .attr("pointer-events", "none");
+
+    const statusLabels = svg.append("g")
+      .selectAll<SVGTextElement, SimNode>("text.status")
+      .data(nodes)
+      .join("text")
+      .attr("class", "status")
+      .text(d => d.status.toUpperCase())
+      .attr("font-size", 9)
+      .attr("font-family", "monospace")
+      .attr("fill", d => d.status !== "idle" ? "#06b6d4" : "rgba(255,255,255,0.3)")
+      .attr("dx", 24)
+      .attr("dy", 14)
       .attr("pointer-events", "none");
 
     simulation.on("tick", () => {
@@ -139,6 +182,10 @@ export default function Network() {
         .attr("cy", d => d.y ?? 0);
 
       labels
+        .attr("x", d => d.x ?? 0)
+        .attr("y", d => d.y ?? 0);
+
+      statusLabels
         .attr("x", d => d.x ?? 0)
         .attr("y", d => d.y ?? 0);
     });
