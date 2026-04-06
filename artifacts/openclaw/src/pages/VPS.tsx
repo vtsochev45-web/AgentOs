@@ -21,7 +21,7 @@ export default function VPS() {
   ];
 
   return (
-    <div className="max-w-7xl mx-auto h-full flex flex-col overflow-hidden">
+    <div className="max-w-7xl mx-auto h-full flex flex-col overflow-hidden pb-16 md:pb-0">
       <header className="mb-3 md:mb-6 shrink-0">
         <div className="flex items-center justify-between gap-2 mb-2">
           <h1 className="text-2xl md:text-3xl font-bold text-white tracking-tight flex items-center gap-2">
@@ -71,7 +71,7 @@ function TerminalView() {
         selectionBackground: 'rgba(6, 182, 212, 0.3)',
       },
       fontFamily: '"JetBrains Mono", monospace',
-      fontSize: 14,
+      fontSize: window.innerWidth < 768 ? 11 : 14,
       cursorBlink: true,
       allowProposedApi: true
     });
@@ -104,7 +104,7 @@ function TerminalView() {
   }, [connect, disconnect, onData, resize, sendData]);
 
   return (
-    <div className="w-full h-full bg-[#0A0F1C] relative">
+    <div className="w-full h-full bg-[#0A0F1C] relative overflow-hidden">
       {!isConnected && (
         <div className="absolute inset-0 bg-black/60 z-10 flex items-center justify-center backdrop-blur-sm">
           <div className="text-center font-mono">
