@@ -72,10 +72,10 @@ export default function Activity() {
 
   return (
     <div className="max-w-4xl mx-auto h-full flex flex-col">
-      <header className="mb-8 shrink-0">
+      <header className="mb-4 md:mb-8 shrink-0">
         <div className="flex items-center justify-between">
-          <h1 className="text-3xl font-bold text-white tracking-tight flex items-center gap-3">
-            <ActivityIcon className="w-8 h-8 text-primary" />
+          <h1 className="text-2xl md:text-3xl font-bold text-white tracking-tight flex items-center gap-2">
+            <ActivityIcon className="w-6 h-6 md:w-8 md:h-8 text-primary shrink-0" />
             Global Telemetry
           </h1>
           <div className="flex items-center gap-1.5 text-xs font-mono">
@@ -86,7 +86,7 @@ export default function Activity() {
             )}
           </div>
         </div>
-        <p className="text-muted-foreground mt-2 text-sm">Real-time log of all system and agent operations.</p>
+        <p className="text-muted-foreground mt-1 text-xs md:text-sm">Real-time log of all system and agent operations.</p>
       </header>
 
       <div className="flex-1 glass-panel rounded-2xl overflow-hidden flex flex-col">
@@ -99,7 +99,7 @@ export default function Activity() {
             Waiting for activity events...
           </div>
         ) : (
-          <div className="flex-1 overflow-y-auto p-4 md:p-6 space-y-3 custom-scrollbar">
+          <div className="flex-1 overflow-y-auto p-3 md:p-6 space-y-2 md:space-y-3 custom-scrollbar pb-20 md:pb-6">
             {groups.map((group) => {
               const isExpanded = expandedGroups.has(group.id);
               const stepEvents = group.events.filter(e => e.actionType !== "chat" || !e.detail?.startsWith("Received:"));
@@ -108,63 +108,56 @@ export default function Activity() {
 
               return (
                 <div key={group.id} className="bg-black/30 border border-white/5 rounded-xl overflow-hidden hover:border-white/10 transition-colors">
-                  {/* Header — always visible */}
                   <div
-                    className="flex items-center gap-3 p-4 cursor-pointer select-none"
+                    className="p-3 md:p-4 cursor-pointer select-none"
                     onClick={() => toggleGroup(group.id)}
                   >
-                    {/* Status indicator */}
-                    {group.status === "running" ? (
-                      <Loader2 className="w-5 h-5 text-primary animate-spin shrink-0" />
-                    ) : group.status === "error" ? (
-                      <ShieldAlert className="w-5 h-5 text-destructive shrink-0" />
-                    ) : (
-                      <CheckCircle2 className="w-5 h-5 text-green-400 shrink-0" />
-                    )}
-
-                    {/* Agent + query */}
-                    <div className="flex-1 min-w-0">
-                      <div className="flex items-center gap-2">
-                        <Bot className="w-4 h-4 text-primary shrink-0" />
-                        <span className="text-primary font-semibold text-sm">{group.agentName}</span>
-                        {toolCount > 0 && (
-                          <span className="text-[10px] font-mono text-white/40 bg-white/5 px-1.5 py-0.5 rounded">
-                            {toolCount} tools
-                          </span>
-                        )}
-                        {completionEvt && (
-                          <span className="text-[10px] font-mono text-green-400/70 bg-green-400/10 px-1.5 py-0.5 rounded">
-                            {completionEvt.detail?.substring(0, 50)}
-                          </span>
-                        )}
-                      </div>
-                      <p className="text-white/80 text-sm mt-0.5 truncate">{group.query}</p>
-                    </div>
-
-                    {/* Time + expand */}
-                    <div className="flex items-center gap-2 shrink-0">
-                      <span className="text-xs text-muted-foreground font-mono">
-                        {group.timestamp ? format(new Date(group.timestamp), "HH:mm:ss") : "--:--:--"}
+                    {/* Row 1: status + agent + time + expand */}
+                    <div className="flex items-center gap-2">
+                      {group.status === "running" ? (
+                        <Loader2 className="w-4 h-4 text-primary animate-spin shrink-0" />
+                      ) : group.status === "error" ? (
+                        <ShieldAlert className="w-4 h-4 text-destructive shrink-0" />
+                      ) : (
+                        <CheckCircle2 className="w-4 h-4 text-green-400 shrink-0" />
+                      )}
+                      <Bot className="w-3.5 h-3.5 text-primary shrink-0" />
+                      <span className="text-primary font-semibold text-sm">{group.agentName}</span>
+                      {toolCount > 0 && (
+                        <span className="text-[9px] font-mono text-white/40 bg-white/5 px-1 py-0.5 rounded hidden sm:inline">
+                          {toolCount} tools
+                        </span>
+                      )}
+                      <span className="flex-1" />
+                      <span className="text-[10px] text-muted-foreground font-mono shrink-0">
+                        {group.timestamp ? format(new Date(group.timestamp), "HH:mm") : ""}
                       </span>
                       {stepEvents.length > 0 && (
                         isExpanded
-                          ? <ChevronDown className="w-4 h-4 text-white/40" />
-                          : <ChevronRight className="w-4 h-4 text-white/40" />
+                          ? <ChevronDown className="w-3.5 h-3.5 text-white/30 shrink-0" />
+                          : <ChevronRight className="w-3.5 h-3.5 text-white/30 shrink-0" />
                       )}
                     </div>
+                    {/* Row 2: query */}
+                    <p className="text-white/80 text-sm mt-1 ml-6 leading-snug">{group.query}</p>
+                    {/* Row 3: completion badge (if exists) */}
+                    {completionEvt && (
+                      <div className="mt-1.5 ml-6">
+                        <span className="text-[10px] font-mono text-green-400/70 bg-green-400/10 px-1.5 py-0.5 rounded">
+                          {completionEvt.detail?.substring(0, 60)}
+                        </span>
+                      </div>
+                    )}
                   </div>
 
                   {/* Steps — collapsible */}
                   {isExpanded && stepEvents.length > 0 && (
-                    <div className="border-t border-white/5 px-4 py-2 space-y-1 bg-black/20">
+                    <div className="border-t border-white/5 px-3 md:px-4 py-2 space-y-0.5 bg-black/20 max-h-48 overflow-y-auto custom-scrollbar">
                       {stepEvents.map((evt, i) => (
-                        <div key={evt.id ?? i} className="flex items-start gap-2 py-1">
+                        <div key={evt.id ?? i} className="flex items-start gap-1.5 py-0.5">
                           <div className="mt-0.5 shrink-0">{getStepIcon(evt.actionType)}</div>
-                          <span className="text-xs text-white/50 font-mono shrink-0 w-16">
-                            {evt.timestamp ? format(new Date(evt.timestamp), "HH:mm:ss") : ""}
-                          </span>
-                          <span className="text-xs text-white/70 font-mono break-all">
-                            <span className="text-white/40">{evt.actionType}: </span>
+                          <span className="text-[10px] text-white/60 font-mono break-all leading-relaxed">
+                            <span className="text-white/30">{evt.actionType}: </span>
                             {evt.detail}
                           </span>
                         </div>
